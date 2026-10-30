@@ -22,41 +22,63 @@ const EN = '#59614a', EN2 = '#4a5140', END = '#30342a';   // the enemy's darker 
 const shade = (hex, k) => { const n = parseInt(hex.slice(1), 16), f = c => Math.max(0, Math.min(255, Math.round(c * k))).toString(16).padStart(2, '0'); return '#' + f(n >> 16) + f((n >> 8) & 255) + f(n & 255); };
 
 /* ---------- missiles ----------
-   A round body along x centred at `at`: an ogive (or cone, or a glass dome) nose, the body in sections with a darker
-   band at each joint, a boat-tail and a nozzle bell, a cable raceway along the top, fins with thickness. o: col,
-   nose, noseCol, noseL, bands (fractions of the body from the tail), tailR, fins { span, c, sw, rot, col, x },
-   mid (the same, mid-body), wings { span, c, x, sw, col }, intake, raceway (false: none) */
+   A round body along x centred at `at`: an ogive (or cone, or a glass dome, or a ramjet's inlet) nose, the body in
+   sections with a darker band at each joint, a boat-tail and a nozzle bell, a cable raceway along the top, fins with
+   thickness. o: col, nose, noseCol, noseL, bands (fractions of the body from the tail), tailR, fins { span, c, sw,
+   rot, col, x }, mid (the same, mid-body), can (canards, the same near the nose), wings { span, c, x, sw, col },
+   intake, raceway (false: none), steps [{ x, r, len }] (a stage that ends x m from the tail, the body ahead of it
+   r times as thick, an interstage len long), paint [{ x0, x1, col }] (stripes of paint, metres from the tail) */
 function rocket(B, at, len, d, o) {
   o = o || {};
   const q = B.q, r = d / 2, col = o.col || P.missile, nl = o.noseL || Math.min(len * 0.22, d * 3), x0 = -len / 2, xb = len / 2 - nl;
   if (!q) {   // far away: the old pencil, cheap
-    MB.missileBody(B, at, len, d, col, { noseL: nl, nose: o.noseCol, fins: o.fins && o.fins.span, finC: o.fins && o.fins.c, finRot: o.fins && o.fins.rot, finSw: o.fins && o.fins.sw, tailR: o.tailR, wings: o.wings && o.wings.span, wingX: o.wings && o.wings.x, wingC: o.wings && o.wings.c });
+    MB.missileBody(B, at, len, d * (o.steps ? Math.sqrt(o.steps[o.steps.length - 1].r) : 1), col, { noseL: nl, nose: o.noseCol, fins: o.fins && o.fins.span, finC: o.fins && o.fins.c, finRot: o.fins && o.fins.rot, finSw: o.fins && o.fins.sw, tailR: o.tailR, wings: o.wings && o.wings.span, wingX: o.wings && o.wings.x, wingC: o.wings && o.wings.c, stripe: o.paint && o.paint.length ? o.paint[0].col : null });
     return;
   }
   const pts = [], cols = [], band = shade(col, 0.72), push = (x, rr, c) => { pts.push([x, rr]); cols.push(c); };
+  const paintAt = x => { for (const p of o.paint || []) if (x - x0 >= p.x0 - 1e-6 && x - x0 < p.x1 - 1e-6) return p.col; return col; };
   const tr = r * (o.tailR || 0.9);
-  push(x0, tr, col); push(x0 + d * 0.5, r, col);
-  for (const f of o.bands || []) { const x = x0 + (xb - x0) * f; push(x - 0.025, r, col); push(x - 0.02, r * 1.015, band); push(x + 0.02, r * 1.015, band); push(x + 0.025, r, col); }
-  push(xb, r, col);
+  // the body from the tail forward: its radius steps down at each stage; bands and stripes of paint are joints in it
+  const ev = [];
+  for (const f of o.bands || []) ev.push({ x: x0 + (xb - x0) * f, band: true });
+  for (const st of o.steps || []) ev.push({ x: x0 + st.x, step: st });
+  for (const p of o.paint || []) { ev.push({ x: x0 + p.x0 }); ev.push({ x: x0 + p.x1 }); }
+  ev.sort((a, b) => a.x - b.x);
+  let rc = r;
+  push(x0, tr, paintAt(x0)); push(x0 + Math.min(d * 0.5, len * 0.08), r, paintAt(x0 + 0.01));
+  for (const e of ev) {
+    if (e.x <= x0 + 0.02 || e.x >= xb) continue;
+    if (e.band) { const c = paintAt(e.x); push(e.x - 0.025, rc, c); push(e.x - 0.02, rc * 1.015, shade(c, 0.72)); push(e.x + 0.02, rc * 1.015, shade(c, 0.72)); push(e.x + 0.025, rc, c); }
+    else if (e.step) { push(e.x, rc, shade(paintAt(e.x - 0.01), 0.8)); rc = r * e.step.r; push(e.x + (e.step.len || rc), rc, paintAt(e.x + 0.01)); }
+    else { push(e.x - 0.002, rc, paintAt(e.x - 0.01)); push(e.x + 0.002, rc, paintAt(e.x + 0.01)); }
+  }
+  push(xb, rc, paintAt(xb - 0.01));
   const nc = o.noseCol || col;
   if (o.nose === 'dome') {
     // a hemispherical seeker window, set in a short collar
-    push(xb + r * 0.15, r * 0.98, nc);
-    for (let i = 1; i <= 6; i++) { const a = i / 6 * Math.PI / 2; push(xb + r * 0.15 + Math.sin(a) * r * 0.95, Math.max(0.002, Math.cos(a) * r * 0.95), GL); }
-  } else for (const k of [0.1, 0.24, 0.4, 0.56, 0.72, 0.86, 0.96, 1]) push(xb + nl * k, Math.max(0.002, r * (o.nose === 'cone' ? 1 - k : Math.sqrt(Math.max(0, 1 - k * k)))), nc);
-  lathe(B, pts, col, { at, segs: 16, cap0: '#2a2826', col: i => cols[i + 1] });
+    push(xb + rc * 0.15, rc * 0.98, nc);
+    for (let i = 1; i <= 6; i++) { const a = i / 6 * Math.PI / 2; push(xb + rc * 0.15 + Math.sin(a) * rc * 0.95, Math.max(0.002, Math.cos(a) * rc * 0.95), GL); }
+  } else if (o.nose === 'inlet') {
+    // a ramjet's open mouth: a lip, the dark throat, and the centre-body cone standing out of it
+    push(xb + nl * 0.7, rc * 0.92, nc); push(xb + nl, rc * 0.84, nc); push(xb + nl, rc * 0.74, '#16181a');
+    lathe(B, [[xb - 0.4, rc * 0.5], [xb + nl * 0.6, rc * 0.42], [xb + nl * 1.45, 0.004]], o.spikeCol || '#3c4044', { at, segs: 12 });
+  } else for (const k of [0.1, 0.24, 0.4, 0.56, 0.72, 0.86, 0.96, 1]) push(xb + nl * k, Math.max(0.002, rc * (o.nose === 'cone' ? 1 - k : Math.sqrt(Math.max(0, 1 - k * k)))), nc);
+  lathe(B, pts, col, { at, segs: 16, cap0: '#2a2826', cap1: o.nose === 'inlet' ? '#16181a' : undefined, col: i => cols[i + 1] });
   // the nozzle bell, dark and flared, open at the back
   lathe(B, [[x0 + 0.01, tr * 0.7], [x0 - d * 0.18, tr * 0.74], [x0 - d * 0.32, tr * 0.86]], '#2e2c28', { at, segs: 12, cap1: '#120f0d' });
   if (o.raceway !== false) box(B, at[0] + (x0 + xb) / 2 + len * 0.04, at[1], at[2] + r * 0.98, (xb - x0) * 0.62, d * 0.13, d * 0.09, shade(col, 0.82));
-  const fin = (f, rot0, fc) => {
+  const fin = (f, rot0, fc, rr) => {
     for (let i = 0; i < 4; i++) {
       const a = rot0 + i * Math.PI / 2, ca = Math.cos(a), sa = Math.sin(a);
       B.with(p => { const yy = p[1] - at[1], zz = p[2] - at[2]; return [p[0], at[1] + yy * ca - zz * sa, at[2] + yy * sa + zz * ca]; },
-        () => wing(B, plan(at[0] + f.x, at[1] + r * 0.92, at[2], f.span, f.c, f.c * (f.tip || 0.4), f.sw || 45, 0, 0.07, 0.05), fc || f.col || col, { foil: FOIL.flat, root: true }));
+        () => wing(B, plan(at[0] + f.x, at[1] + (rr || r) * 0.92, at[2], f.span, f.c, f.c * (f.tip || 0.4), f.sw || 45, 0, 0.07, 0.05), fc || f.col || col, { foil: FOIL.flat, root: true }));
     }
   };
-  if (o.fins) fin(Object.assign({ x: x0 + o.fins.c + d * 0.1 }, o.fins), o.fins.rot || 0, o.fins.col);
-  if (o.mid) fin(o.mid, o.mid.rot || 0, o.mid.col);
+  // the radius of the body at x (from the centre), for fins that sit on a later stage
+  const rAt = x => { let rr = r; for (const st of o.steps || []) if (x > x0 + st.x) rr = r * st.r; return rr; };
+  if (o.fins) { const f = Object.assign({ x: x0 + o.fins.c + d * 0.1 }, o.fins); fin(f, o.fins.rot || 0, o.fins.col, rAt(f.x - f.c)); }
+  if (o.mid) fin(o.mid, o.mid.rot || 0, o.mid.col, rAt(o.mid.x - o.mid.c));
+  if (o.can) fin(o.can, o.can.rot || 0, o.can.col, rAt(o.can.x - o.can.c));
   if (o.wings) wing(B, plan(at[0] + o.wings.x, 0, at[2] + (o.wings.z || 0), o.wings.span / 2, o.wings.c, o.wings.c * 0.62, o.wings.sw || 6, 0, 0.09, 0.07), o.wings.col || shade(col, 0.92), { mirror: true, foil: FOIL.hi });
   if (o.intake) {
     MB.loft(B, [{ x: at[0] - len * 0.02, w: r * 0.45, h: r * 0.32, z: at[2] - r * 0.95 }, { x: at[0] - len * 0.2, w: r * 0.5, h: r * 0.36, z: at[2] - r * 0.9 }, { x: at[0] - len * 0.3, w: r * 0.2, h: r * 0.15, z: at[2] - r * 0.6 }], MB.ANG.mid, () => shade(col, 0.85), { cap1: P.intake });
@@ -64,14 +86,157 @@ function rocket(B, at, len, d, o) {
 }
 IC.MB.rocket = rocket;
 
-const SAM = { col: '#e2e2dc', nose: 'ogive', noseCol: '#f0eee6', bands: [0.18, 0.55, 0.82], fins: { span: 0.42, c: 0.75, sw: 50, tip: 0.35 } };
-def('sam', 'Interceptor', 'Missiles', 5.3, 0.9, B => { rocket(B, [0, 0, 0], 5.3, 0.41, SAM); if (B.q) cyl(B, [1.25, 0, 0], 0.16, 0.209, '#b02a30', 'x', { segs: 16 }); });
+/* Every weapon in the air reads at a glance from what it is, at the distance a camera holds it:
+   - ours are white, with a band of colour by family (yellow heat-seekers, blue short range, orange medium range, red
+     long range and ballistic-missile defence, black hit-to-kill noses) and the shape of their class: canards and a glass
+     dome on the small ones, mid-body wings on the medium, boosters and stages on the big ones;
+   - theirs wear their side's dull paint, greens, greys and charcoal, with a rust band at the tail, and each family its
+     own outline: a delta drone with a propeller, a jet drone with its engine on its back, a faceted stealthy missile,
+     a ramjet's open mouth, a bomb under a wing kit, a stage and a cone for the big ballistic ones. */
+const WH = '#e4e4de', WN = '#f0eee6', BAND = { ir: '#e0b020', sr: '#2a62b8', mr: '#e07b1a', lr: '#b02a30', bmd: '#b02a30', aam: '#c89a2a', strike: '#2a62b8' };
+const RUST = '#a4441c', EGR = '#6b6f66', EOL = '#5b6448', ECH = '#3a3e42', ESA = '#8a8470';
+const ring = (B, x, d, col, w) => { if (B.q) cyl(B, [x, 0, 0], w || 0.06, d / 2 * 1.02, col, 'x', { segs: 16 }); };
+const p = (x0, x1, col) => ({ x0, x1, col });
+
+// our interceptors, by IC.MUN key (IC.modelOfMissile)
+def('sam', 'Long-range interceptor', 'Missiles', 5.3, 0.9, B => rocket(B, [0, 0, 0], 5.3, 0.41, { col: WH, noseCol: WN, bands: [0.18, 0.55, 0.82], paint: [p(3.5, 3.72, BAND.lr)], fins: { span: 0.42, c: 0.75, sw: 50, tip: 0.35 } }));
+def('irm', 'Heat-seeking missile', 'Missiles', 2.0, 0.34, B => rocket(B, [0, 0, 0], 2.0, 0.11, { col: WH, nose: 'dome', noseL: 0.08, bands: [0.5], paint: [p(1.45, 1.6, BAND.ir)], raceway: false,
+  can: { x: 0.68, span: 0.07, c: 0.09, sw: 30, tip: 0.6 }, fins: { span: 0.1, c: 0.12, sw: 20, tip: 0.7, rot: Math.PI / 4 } }));
+def('srm', 'Short-range missile', 'Missiles', 3.0, 0.62, B => rocket(B, [0, 0, 0], 3.0, 0.165, { col: WH, noseCol: WN, noseL: 0.45, bands: [0.3, 0.7], paint: [p(1.9, 2.05, BAND.sr)],
+  can: { x: 0.95, span: 0.11, c: 0.16, sw: 35, tip: 0.5 }, fins: { span: 0.2, c: 0.3, sw: 40, tip: 0.5 } }));
+def('mrm', 'Medium-range missile', 'Missiles', 3.9, 0.74, B => rocket(B, [0, 0, 0], 3.9, 0.24, { col: WH, noseCol: '#d8d6cc', noseL: 0.62, bands: [0.25, 0.6], paint: [p(2.5, 2.68, BAND.mr)],
+  mid: { x: 0.35, span: 0.2, c: 0.62, sw: 55, tip: 0.2 }, fins: { span: 0.25, c: 0.34, sw: 35, tip: 0.45 } }));
+def('lre', 'Extended-range interceptor', 'Missiles', 6.4, 1.0, B => rocket(B, [0, 0, 0], 6.4, 0.5, { col: WH, noseCol: WN, noseL: 1.25, steps: [{ x: 1.7, r: 0.82, len: 0.25 }],
+  bands: [0.5, 0.82], paint: [p(0, 1.7, '#cfcfc8'), p(4.1, 4.32, BAND.lr), p(4.42, 4.5, BAND.lr)], fins: { span: 0.5, c: 0.85, sw: 45, tip: 0.4 } }));
+def('vlr', 'Very-long-range interceptor', 'Missiles', 7.6, 1.5, B => {
+  rocket(B, [0, 0, 0], 7.6, 0.56, { col: WH, noseCol: '#d8d6cc', noseL: 1.5, steps: [{ x: 3.0, r: 0.68, len: 0.4 }], bands: [0.7],
+    paint: [p(0, 3.0, '#d2d2ca'), p(5.0, 5.25, BAND.lr)], fins: { span: 0.62, c: 1.15, sw: 30, tip: 0.55 }, mid: { x: 0.8, span: 0.1, c: 1.4, sw: 70, tip: 0.1 } });
+  ring(B, -0.85, 0.56, '#2a2c2e', 0.08);
+});
+def('tbd', 'Hit-to-kill missile', 'Missiles', 5.2, 0.62, B => {
+  rocket(B, [0, 0, 0], 5.2, 0.255, { col: WH, noseCol: '#2e3134', noseL: 0.7, bands: [0.22, 0.56], paint: [p(3.6, 3.75, BAND.bmd)], fins: { span: 0.2, c: 0.52, sw: 20, tip: 0.6 }, mid: { x: 0.2, span: 0.06, c: 0.5, sw: 60, tip: 0.2, rot: Math.PI / 4 } });
+  // the ring of small steering motors behind the seeker: what turns it onto the warhead in the last second
+  if (B.q) for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; box(B, 1.75, Math.cos(a) * 0.13, Math.sin(a) * 0.13, 0.12, 0.035, 0.035, '#3a3d40'); }
+});
+def('hatm', 'High-altitude interceptor', 'Missiles', 6.2, 0.62, B => {
+  // no fins: a flared skirt steadies it, and the kill vehicle rides under a black shroud on the nose
+  rocket(B, [0, 0, 0], 6.2, 0.34, { col: WH, noseCol: '#202224', nose: 'cone', noseL: 1.3, tailR: 1.7, bands: [0.35, 0.68], paint: [p(3.9, 4.1, BAND.bmd)], raceway: true });
+  if (B.q) lathe(B, [[-3.1, 0.29], [-2.55, 0.18]], '#c8c8c0', { segs: 16 });
+  ring(B, 1.75, 0.34, '#2a2c2e', 0.12);
+});
+def('exom', 'Exo-atmospheric interceptor', 'Missiles', 6.7, 1.3, B => {
+  // three stages, each thinner than the last, under a shroud that opens in space
+  rocket(B, [0, 0, 0], 6.7, 0.53, { col: WH, noseCol: '#202224', nose: 'cone', noseL: 0.95, steps: [{ x: 2.8, r: 0.66, len: 0.3 }, { x: 4.9, r: 0.58, len: 0.12 }],
+    paint: [p(0, 2.8, '#d0d0c8'), p(4.4, 4.6, BAND.bmd)], fins: { span: 0.55, c: 0.75, sw: 25, tip: 0.6 }, mid: { x: 0.1, span: 0.07, c: 2.0, sw: 80, tip: 0.1 } });
+  ring(B, -0.55, 0.36, '#2a2c2e', 0.06); ring(B, 1.55, 0.31, '#2a2c2e', 0.05);
+});
+def('aam', 'Air-to-air missile', 'Missiles', 3.66, 0.63, B => rocket(B, [0, 0, 0], 3.66, 0.178, { col: '#d6d8d4', noseCol: '#c4c6c2', noseL: 0.55, bands: [0.3, 0.62], paint: [p(2.4, 2.52, BAND.aam), p(2.6, 2.66, BAND.aam)],
+  mid: { x: 0.2, span: 0.2, c: 0.5, sw: 55, tip: 0.2 }, fins: { span: 0.22, c: 0.36, sw: 40, tip: 0.4 } }));
+def('intd', 'Interceptor drone', 'Missiles', 1.2, 0.8, B => {
+  rocket(B, [0, 0, 0.3], 1.2, 0.16, { col: '#8c9496', nose: 'dome', noseL: 0.06, paint: [p(0.62, 0.7, BAND.ir)], raceway: false, can: { x: 0.1, span: 0.32, c: 0.16, sw: 15, tip: 0.6, rot: Math.PI / 4 } });
+  MB.prop(B, 'prop', -0.72, 0, 0.3, 0.36, 2, P.dark, { axis: [-1, 0, 0], spin: '#5c605a' });
+});
+def('gbu', 'Guided bomb', 'Missiles', 3.8, 0.8, B => rocket(B, [0, 0, 0], 3.8, 0.46, { col: P.olive, noseCol: '#6a7656', noseL: 1.0, bands: [0.5], raceway: false, paint: [p(2.5, 2.6, '#d8b030')],
+  fins: { span: 0.32, c: 0.55, sw: 30, tip: 0.6, rot: Math.PI / 4 }, can: { x: 1.0, span: 0.12, c: 0.4, sw: 45, tip: 0.3, rot: Math.PI / 4 } }));
+// ours for striking back, by IC.MUN key (IC.modelOfStrike)
+def('crs', 'Our cruise missile', 'Missiles', 5.6, 2.5, B => rocket(B, [0, 0, 0], 5.6, 0.52, { col: '#b6bcc2', noseCol: '#9ca2a8', noseL: 0.8, bands: [0.35, 0.7], raceway: false, paint: [p(3.6, 3.8, BAND.strike)],
+  wings: { span: 2.5, c: 0.45, x: 0.5, sw: 6, z: 0.18 }, fins: { span: 0.4, c: 0.45, rot: Math.PI / 4, sw: 40, tip: 0.5 }, intake: true }));
+def('tbmu', 'Our tactical ballistic missile', 'Missiles', 4.0, 1.1, B => rocket(B, [0, 0, 0], 4.0, 0.61, { col: WH, noseCol: '#d8d6cc', noseL: 1.3, bands: [0.4], paint: [p(0.6, 0.9, '#2a2c2e'), p(2.2, 2.4, BAND.strike)],
+  fins: { span: 0.25, c: 0.6, sw: 15, tip: 0.7, rot: Math.PI / 4 } }));
+def('grk', 'Our guided rocket', 'Missiles', 3.9, 0.6, B => rocket(B, [0, 0, 0], 3.9, 0.227, { col: '#6b7350', noseCol: '#5a6144', noseL: 0.6, bands: [0.4], paint: [p(2.6, 2.75, BAND.strike)],
+  can: { x: 1.15, span: 0.09, c: 0.16, sw: 30, tip: 0.6 }, fins: { span: 0.16, c: 0.28, sw: 10, tip: 0.9, rot: Math.PI / 4 } }));
+
+// the enemy's weapons, by IC.THR key (THR_MODEL in models.js)
+def('owa', 'One-way attack drone', 'Enemy weapons', 3.5, 2.5, B => {
+  // a cranked delta with fins up and down at the tips, the warhead in the nose and a piston engine pushing at the back
+  const q = B.q;
+  MB.slimBody(B, 3.5, 0.45, 0.6, EGR, { nose: 0.75, tail: 0.35 });
+  if (q) { lathe(B, [[1.75, 0.003], [1.55, 0.12], [1.3, 0.2], [1.12, 0.22]], '#2a2c2e', { at: [0, 0, 0.6], segs: 12 }); cyl(B, [-0.6, 0, 0.6], 0.12, 0.23, RUST, 'x', { segs: 12 }); }
+  wing(B, [{ x: 1.15, y: 0.18, z: 0.5, c: 2.6, t: 0.07 }, { x: 0.2, y: 0.55, z: 0.52, c: 1.65, t: 0.06 }, { x: -1.15, y: 1.25, z: 0.55, c: 0.55, t: 0.05 }], EGR, { mirror: true });
+  for (const sg of [1, -1]) wing(B, [{ x: -1.05, y: sg * 1.25, z: 0.22, c: 0.7, t: 0.05 }, { x: -1.35, y: sg * 1.25, z: 0.98, c: 0.38, t: 0.05 }], shade(EGR, 0.85), { thick: [0, 1, 0] });
+  if (q) { box(B, -1.32, 0, 0.6, 0.38, 0.4, 0.36, '#3e4044'); for (let i = 0; i < 4; i++) box(B, -1.25 + i * 0.07, 0, 0.8, 0.03, 0.42, 0.04, '#26282a'); }
+  MB.prop(B, 'prop', -1.85, 0, 0.6, 0.75, 2, '#1e2022', { axis: [-1, 0, 0], spin: '#3e4044' });
+});
+def('jdr', 'Jet attack drone', 'Enemy weapons', 3.6, 3.0, B => {
+  // the same kind of delta in charcoal, a small turbojet on its back instead of a propeller
+  MB.slimBody(B, 3.6, 0.5, 0.6, ECH, { nose: 0.9, tail: 0.4 });
+  if (B.q) cyl(B, [0.85, 0, 0.6], 0.12, 0.255, RUST, 'x', { segs: 12 });
+  wing(B, [{ x: 0.95, y: 0.2, z: 0.55, c: 2.4, t: 0.06 }, { x: -1.15, y: 1.5, z: 0.55, c: 0.5, t: 0.05 }], ECH, { mirror: true });
+  for (const sg of [1, -1]) wing(B, [{ x: -1.05, y: sg * 1.5, z: 0.3, c: 0.6, t: 0.05 }, { x: -1.3, y: sg * 1.5, z: 1.0, c: 0.32, t: 0.05 }], shade(ECH, 0.8), { thick: [0, 1, 0] });
+  lathe(B, [[0.85, 0.15], [0.7, 0.2], [-0.5, 0.2], [-0.85, 0.15]], '#55595e', { at: [-1.0, 0, 0.98], cap0: P.intake, cap1: P.nozzle, segs: B.q ? 12 : 6 });
+  if (B.q) box(B, -0.7, 0, 0.82, 0.8, 0.08, 0.2, ECH);
+});
+def('lm', 'Loitering munition', 'Enemy weapons', 1.7, 1.1, B => {
+  // a tube with two crosses of wings that spring out after launch, a camera under the nose, a propeller behind
+  rocket(B, [0, 0, 0.5], 1.7, 0.16, { col: EOL, noseCol: '#3e4436', noseL: 0.28, paint: [p(0.25, 0.32, RUST)], raceway: false,
+    can: { x: 0.55, span: 0.42, c: 0.17, sw: 0, tip: 1 }, fins: { span: 0.38, c: 0.16, sw: 0, tip: 1, rot: Math.PI / 4 } });
+  if (B.q) lathe(B, [[0.07, 0.003], [0.035, 0.05], [-0.035, 0.05]], GL, { at: [0.55, 0, 0.4], axis: 'z', segs: 10 });
+  MB.prop(B, 'prop', -0.92, 0, 0.5, 0.38, 2, '#1e2022', { axis: [-1, 0, 0], spin: '#3e4044' });
+});
+def('cm', 'Cruise missile', 'Enemy weapons', 6.2, 2.6, B => rocket(B, [0, 0, 0], 6.2, 0.52, { col: '#646c72', noseCol: '#4a5056', noseL: 0.9, bands: [0.35, 0.7], raceway: false, paint: [p(0.5, 0.68, RUST)],
+  wings: { span: 2.6, c: 0.5, x: 0.65, sw: 4, z: 0.16 }, fins: { span: 0.42, c: 0.5, rot: Math.PI / 4, sw: 40, tip: 0.5 }, intake: true }));
+def('mcm', 'Manoeuvring cruise missile', 'Enemy weapons', 6.4, 2.4, B => {
+  // faceted to hide from radar: a flat-sided body that narrows to a chisel nose, swept wings and a V of tail fins
+  const st = [{ x: 3.2, w: 0.02, h: 0.02, z: 0 }, { x: 2.4, w: 0.36, h: 0.16, z: 0 }, { x: 1.4, w: 0.58, h: 0.27, z: 0.01 }, { x: -2.2, w: 0.62, h: 0.3, z: 0.02 }, { x: -3.2, w: 0.38, h: 0.2, z: 0.04 }];
+  MB.loft(B, st.slice().sort((a, b) => a.x - b.x), MB.ANG.lo, (x, a) => (a > 100 && a < 260 ? '#3c4248' : x > 2.2 ? '#3c4248' : '#4c535a'), { cap0: P.nozzle, smooth: false });
+  if (B.q) MB.loft(B, [{ x: -1.25, w: 0.64, h: 0.31, z: 0.02 }, { x: -1.1, w: 0.64, h: 0.31, z: 0.02 }], MB.ANG.lo, () => RUST, { smooth: false });
+  wing(B, plan(0.5, 0.25, 0.08, 1.0, 0.7, 0.28, 35, 0, 0.05, 0.04), '#454c53', { mirror: true, foil: FOIL.flat });
+  for (const sg of [1, -1]) wing(B, plan(-2.6, sg * 0.18, 0.15, 0.5, 0.5, 0.22, 45, 90 - sg * 50, 0.05, 0.04), '#454c53', { foil: FOIL.flat });
+  if (B.q) MB.loft(B, [{ x: -0.2, w: 0.2, h: 0.06, z: 0.31 }, { x: 0.6, w: 0.24, h: 0.08, z: 0.31 }], MB.ANG.lo, () => P.intake, { cap1: P.intake, smooth: false });
+});
+def('scm', 'Supersonic cruise missile', 'Enemy weapons', 8.4, 1.7, B => rocket(B, [0, 0, 0], 8.4, 0.67, { col: '#4e5660', noseCol: '#5a626c', nose: 'inlet', noseL: 0.5, bands: [0.25, 0.55, 0.8], paint: [p(0.6, 0.85, RUST)],
+  mid: { x: 1.4, span: 0.12, c: 3.2, sw: 80, tip: 0.1, rot: Math.PI / 4 }, fins: { span: 0.45, c: 0.85, rot: Math.PI / 4, sw: 45, tip: 0.35 } }));
+def('glb', 'Glide bomb', 'Enemy weapons', 3.5, 2.6, B => {
+  // an old bomb with a wing kit strapped on: long straight wings on a saddle over its back, a tail kit behind
+  rocket(B, [0, 0, 0], 3.5, 0.45, { col: '#55603f', noseCol: '#4a5436', noseL: 0.95, bands: [0.4], raceway: false, paint: [p(2.15, 2.3, '#d8b030'), p(0.3, 0.42, RUST)], fins: { span: 0.3, c: 0.5, rot: Math.PI / 4, sw: 30, tip: 0.6 } });
+  box(B, 0.2, 0, 0.26, 1.1, 0.24, 0.12, '#3a3e36');
+  wing(B, plan(0.4, 0.1, 0.34, 1.25, 0.24, 0.2, 2, 2, 0.07, 0.07), '#5c6066', { mirror: true, foil: FOIL.flat });
+  if (B.q) for (const sg of [1, -1]) box(B, 0.2, sg * 0.18, 0.18, 0.06, 0.04, 0.2, '#2a2c2a');
+});
+const BM = { col: '#7b8068', noseCol: '#3e4236', noseL: 2.4, bands: [0.28, 0.62], paint: [p(0.55, 0.85, RUST)], fins: { span: 0.42, c: 0.95, sw: 25, tip: 0.6 } };
 def('bm', 'Ballistic missile', 'Enemy weapons', 7.3, 1.9, B => {
-  rocket(B, [0, 0, 0], 7.3, 0.92, { col: '#7b8068', noseCol: '#3e4236', noseL: 2.4, bands: [0.28, 0.62], fins: { span: 0.42, c: 0.95, sw: 25, tip: 0.6 } });
+  rocket(B, [0, 0, 0], 7.3, 0.92, BM);
   if (B.q) for (const y of [-1, 1]) box(B, -1.2, y * 0.47, 0, 1.6, 0.02, 0.18, '#3a3d33');   // the handling rails
 });
-def('cm', 'Cruise missile', 'Enemy weapons', 6.2, 2.6, B => rocket(B, [0, 0, 0], 6.2, 0.52, { col: '#646c72', noseCol: '#4a5056', noseL: 0.9, bands: [0.35, 0.7], raceway: false,
-  wings: { span: 2.6, c: 0.5, x: 0.65, sw: 4, z: 0.16 }, fins: { span: 0.42, c: 0.5, rot: Math.PI / 4, sw: 40, tip: 0.5 }, intake: true }));
+def('marv', 'Manoeuvring-warhead missile', 'Enemy weapons', 7.6, 1.9, B => {
+  // the warhead steers on its way down: a darker cone with four small fins of its own
+  rocket(B, [0, 0, 0], 7.6, 0.92, Object.assign({}, BM, { noseCol: '#2c2e2a', noseL: 2.7, bands: [0.3, 0.62] }));
+  for (let i = 0; i < 4; i++) { const a = Math.PI / 4 + i * Math.PI / 2, ca = Math.cos(a), sa = Math.sin(a); B.with(q => [q[0], q[1] * ca - q[2] * sa, q[1] * sa + q[2] * ca], () => wing(B, plan(1.95, 0.32, 0, 0.18, 0.4, 0.22, 35, 0, 0.05, 0.04), '#2c2e2a', { foil: FOIL.flat, root: true })); }
+});
+def('mrbm', 'Medium-range ballistic missile', 'Enemy weapons', 12.0, 2.4, B => {
+  // two stages; the warhead's cone rides on top of the second
+  rocket(B, [0, 0, 0], 12.0, 1.2, { col: '#6f765e', noseCol: '#2c2e2a', nose: 'cone', noseL: 2.3, steps: [{ x: 6.2, r: 0.85, len: 0.5 }], bands: [0.3, 0.75], paint: [p(0.8, 1.2, RUST), p(6.2, 6.7, '#54594a')], fins: { span: 0.55, c: 1.3, sw: 20, tip: 0.6 } });
+  ring(B, 3.7, 1.02, '#3a3e34', 0.1);
+});
+def('rv', 'Warhead or decoy', 'Enemy weapons', 2.0, 0.6, B => {
+  // what comes down at the end: a dark blunt cone, warhead and decoy alike
+  lathe(B, B.q ? [[-1.0, 0.003], [-1.0, 0.3], [-0.9, 0.3], [0.8, 0.06], [0.92, 0.04], [1.0, 0.003]] : [[-1.0, 0.3], [1.0, 0.03]], '#2e302c', { segs: B.q ? 16 : 6, cap0: '#1a1b19', col: i => i === 1 ? RUST : '#2e302c' });
+});
+def('hgv', 'Hypersonic glide vehicle', 'Enemy weapons', 5.5, 2.2, B => {
+  // a flat wedge in heat-scorched carbon, a sharp nose, two fins canted out and flaps under its tail
+  const st = [{ x: 2.75, w: 0.02, h: 0.02, z: 0.4 }, { x: 1.5, w: 0.4, h: 0.18, z: 0.4, n: 3 }, { x: -1, w: 0.9, h: 0.3, z: 0.4, n: 3 }, { x: -2.75, w: 1.1, h: 0.35, z: 0.42, n: 3 }];
+  st.sort((a, b) => a.x - b.x);
+  MB.loft(B, st, MB.ANG.mid, (x, a) => (a > 90 && a < 270 ? '#1c1d1e' : x > 1.6 ? '#6a5a4a' : '#3c3e40'), { cap0: P.nozzle, smooth: false });
+  for (const sg of [1, -1]) wing(B, plan(-1.8, sg * 0.95, 0.65, 0.6, 0.9, 0.4, 45, 90 - sg * 20, 0.06, 0.06), '#3c3e40', {});
+  if (B.q) { for (const sg of [1, -1]) box(B, -2.85, sg * 0.4, 0.15, 0.4, 0.55, 0.04, '#1c1d1e', { pitch: 0.25 }); box(B, -0.9, 0, 0.71, 1.2, 0.5, 0.02, RUST); }
+});
+def('rkt', 'Guided rocket', 'Enemy weapons', 3.9, 0.6, B => rocket(B, [0, 0, 0], 3.9, 0.23, { col: EOL, noseCol: '#3e4436', noseL: 0.62, bands: [0.45], paint: [p(0.35, 0.5, RUST)],
+  can: { x: 1.15, span: 0.08, c: 0.15, sw: 30, tip: 0.6, rot: Math.PI / 4 }, fins: { span: 0.17, c: 0.3, sw: 8, tip: 0.9 } }));
+def('arm', 'Anti-radiation missile', 'Enemy weapons', 4.2, 1.1, B => rocket(B, [0, 0, 0], 4.2, 0.25, { col: '#5e646c', noseCol: '#b8bcc0', noseL: 0.7, bands: [0.3, 0.62], paint: [p(0.3, 0.45, RUST)],
+  mid: { x: 0.45, span: 0.36, c: 0.9, sw: 50, tip: 0.25 }, fins: { span: 0.3, c: 0.35, sw: 40, tip: 0.45 } }));
+def('dcy', 'Air-launched decoy', 'Enemy weapons', 2.8, 1.7, B => {
+  // a box of a body with wings that unfold from under it and a canted pair of tail fins; it looks like a fighter to radar
+  const st = [{ x: 1.4, w: 0.05, h: 0.05, z: 0 }, { x: 1.0, w: 0.26, h: 0.2, z: 0 }, { x: -1.1, w: 0.3, h: 0.24, z: 0 }, { x: -1.4, w: 0.2, h: 0.16, z: 0.02 }];
+  MB.loft(B, st.slice().sort((a, b) => a.x - b.x), MB.ANG.lo, (x, a) => (x > 1.1 ? '#4a5056' : '#7b8088'), { cap0: P.nozzle, smooth: false });
+  if (B.q) cyl(B, [-0.9, 0, 0], 0.14, 0.255, RUST, 'x', { segs: 8 });
+  wing(B, plan(0.15, 0.1, -0.2, 0.85, 0.3, 0.2, 28, 0, 0.06, 0.05), '#6a7078', { mirror: true, foil: FOIL.flat });
+  for (const sg of [1, -1]) wing(B, plan(-1.0, sg * 0.15, 0.2, 0.4, 0.4, 0.2, 40, 90 - sg * 35, 0.05, 0.04), '#6a7078', { foil: FOIL.flat });
+});
+// the enemy's fighters fire these at ours
+def('eirm', 'Their heat-seeking missile', 'Enemy weapons', 2.9, 0.6, B => rocket(B, [0, 0, 0], 2.9, 0.17, { col: '#9aa0a2', nose: 'dome', noseL: 0.1, bands: [0.5], paint: [p(0.4, 0.55, RUST)], raceway: false,
+  can: { x: 1.05, span: 0.16, c: 0.2, sw: 45, tip: 0.3 }, fins: { span: 0.2, c: 0.3, sw: 35, tip: 0.4 } }));
+def('eaam', 'Their radar missile', 'Enemy weapons', 3.6, 0.7, B => rocket(B, [0, 0, 0], 3.6, 0.2, { col: '#9aa0a2', noseCol: '#7a8084', noseL: 0.55, bands: [0.3, 0.62], paint: [p(0.4, 0.55, RUST)],
+  mid: { x: 0.3, span: 0.06, c: 1.6, sw: 80, tip: 0.1 }, fins: { span: 0.3, c: 0.25, sw: 0, tip: 1 } }));
 
 /* ---------- wheels, cabs, chassis ---------- */
 /* a military tyre with a deep tread band and a hub, on the outside at y */
@@ -279,7 +444,7 @@ def('etel', 'Missile launcher', 'Enemy launchers', 13.5, 3.0, B => {
   for (const x of [-4.8, -1.8, 1.2]) box(B, x, 0, 2.3, 0.3, 1.4, 0.2, EN2);
   B.home = 'erect';
   B.group('rnd0', { kind: 'rnd', pivot: [-5.9, 0, 2.0], axis: [0, 0, 1], i: 0 });
-  rocket(B, [-2.0, 0, 2.95], 7.3, 0.92, { col: '#7b8068', noseCol: '#3e4236', noseL: 2.4, bands: [0.28, 0.62], fins: { span: 0.42, c: 0.95, sw: 25, tip: 0.6 } });
+  rocket(B, [-2.0, 0, 2.95], 7.3, 0.92, BM);
   B.home = null; B.group('main');
 });
 /* the cruise missile launcher: a four-axle truck with two canisters that elevate over the back */

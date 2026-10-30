@@ -1202,30 +1202,8 @@ def('heli', 'Helicopter', 'Our air wing', 19.8, 16.4, B => heli(B, {
   wheels: [[2.9, 1.3, 0.4], [2.9, -1.3, 0.4], [-8.9, 0, 0.22]]
 }));
 // our missiles in flight
-def('sam', 'Interceptor', 'Missiles', 5.3, 0.9, B => missileBody(B, [0, 0, 0], 5.3, 0.41, P.missile, { fins: 0.42, finC: 0.8, stripe: P.red, nose: P.lgrey, tailR: 0.95 }));
-def('aam', 'Air-to-air missile', 'Missiles', 3.66, 0.63, B => missileBody(B, [0, 0, 0], 3.66, 0.18, P.missile, { fins: 0.22, finC: 0.36, mid: 0.2, midX: 0.55, midC: 0.5, nose: P.lgrey, stripe: P.orange }));
-def('gbu', 'Guided bomb', 'Missiles', 3.8, 0.8, B => missileBody(B, [0, 0, 0], 3.8, 0.46, P.olive, { noseL: 1.0, fins: 0.32, finC: 0.55, finRot: Math.PI / 4, mid: 0.12, midX: 0.9, midC: 0.9, stripe: P.sand }));
 
 // the enemy's tokens, by IC.THR key (airliners and light aircraft use the civil models above)
-def('owa', 'One-way attack drone', 'Enemy weapons', 3.5, 2.5, B => {
-  // a delta with fins at the wingtips and a pusher propeller
-  slimBody(B, 3.5, 0.45, 0.6, P.enemy, { nose: 0.7, tail: 0.3 });
-  wing(B, [{ x: 1.0, y: 0, z: 0.55, c: 2.7, t: 0.06 }, { x: -1.2, y: 1.25, z: 0.55, c: 0.5, t: 0.06 }], P.enemy, { mirror: true });
-  for (const sg of [1, -1]) wing(B, [{ x: -1.1, y: sg * 1.25, z: 0.25, c: 0.6, t: 0.05 }, { x: -1.35, y: sg * 1.25, z: 0.95, c: 0.35, t: 0.05 }], P.enemy2, { thick: [0, 1, 0] });
-  prop(B, 'prop', -1.85, 0, 0.6, 0.75, 2, P.dark, { axis: [-1, 0, 0], spin: P.enemy2 });
-});
-def('jdr', 'Jet attack drone', 'Enemy weapons', 3.5, 3.0, B => {
-  slimBody(B, 3.5, 0.5, 0.6, P.enemy2, { nose: 0.8, tail: 0.4 });
-  wing(B, [{ x: 0.9, y: 0, z: 0.55, c: 2.5, t: 0.06 }, { x: -1.1, y: 1.5, z: 0.55, c: 0.5, t: 0.06 }], P.enemy2, { mirror: true });
-  for (const sg of [1, -1]) wing(B, [{ x: -1.0, y: sg * 1.5, z: 0.3, c: 0.55, t: 0.05 }, { x: -1.25, y: sg * 1.5, z: 0.95, c: 0.3, t: 0.05 }], P.enemy, { thick: [0, 1, 0] });
-  lathe(B, [[0.8, 0.14], [0.6, 0.2], [-0.6, 0.19], [-0.8, 0.15]], P.dgrey, { at: [-0.9, 0, 0.92], cap0: P.intake, cap1: P.nozzle });
-});
-def('lm', 'Loitering munition', 'Enemy weapons', 1.65, 1.0, B => {
-  // two cruciform sets of wings, front and back, on a slim body
-  missileBody(B, [0, 0, 0.5], 1.65, 0.23, P.enemy, { noseL: 0.3, nose: P.warhead });
-  for (const [x, sp] of [[0.4, 0.5], [-0.35, 0.5]]) for (let i = 0; i < 4; i++) { const a = Math.PI / 4 + i * Math.PI / 2; B.with(p => { const yy = p[1], zz = p[2] - 0.5; return [p[0], yy * Math.cos(a) - zz * Math.sin(a), 0.5 + yy * Math.sin(a) + zz * Math.cos(a)]; }, () => wing(B, plan(x, 0.1, 0.5, sp, 0.22, 0.2, 0, 0, 0.06, 0.06), P.enemy2, { foil: FOIL.flat })); }
-  prop(B, 'prop', -0.9, 0, 0.5, 0.35, 2, P.dark, { axis: [-1, 0, 0], spin: P.enemy });
-});
 def('isr', 'Reconnaissance drone', 'Enemy weapons', 9.0, 16.6, B => {
   // twin booms and twin fins, a pusher propeller between them
   slimBody(B, 6.6, 0.95, 1.5, P.enemy, { nose: 1.6, tail: 1.2, bulge: 0.15 });
@@ -1236,20 +1214,6 @@ def('isr', 'Reconnaissance drone', 'Enemy weapons', 9.0, 16.6, B => {
   lathe(B, [[0.22, 0.02], [0.2, 0.2], [-0.2, 0.2], [-0.22, 0.02]], P.dgrey, { at: [2.0, 0, 0.95], axis: 'z', segs: 8 });
   gearLeg(B, 'gearN', 2.3, 0, 1.05, 0.2, 1, {}); for (const sg of [1, -1]) gearLeg(B, sg > 0 ? 'gearR' : 'gearL', 0.2, sg * 0.9, 1.2, 0.24, 1, {});
 });
-def('cm', 'Cruise missile', 'Enemy weapons', 6.2, 2.6, B => missileBody(B, [0, 0, 0], 6.2, 0.52, P.enemy, { noseL: 0.9, nose: P.warhead, wings: 2.6, wingX: 0.6, wingC: 0.55, wingSw: 5, fins: 0.4, finC: 0.5, finRot: Math.PI / 4, intake: true }));
-def('scm', 'Supersonic cruise missile', 'Enemy weapons', 8.4, 1.7, B => { missileBody(B, [0, 0, 0], 8.4, 0.67, P.enemy2, { noseL: 1.6, mid: 0.52, midX: 1.2, midC: 1.3, fins: 0.45, finC: 0.8, finRot: Math.PI / 4 }); lathe(B, [[0.3, 0.02], [0, 0.16]], P.dgrey, { at: [4.3, 0, 0], cap1: P.intake }); });
-def('glb', 'Glide bomb', 'Enemy weapons', 3.5, 2.6, B => { missileBody(B, [0, 0, 0], 3.5, 0.45, P.olive, { noseL: 0.9, fins: 0.3, finC: 0.5, finRot: Math.PI / 4 }); wing(B, plan(0.5, 0, 0.3, 1.3, 0.45, 0.35, 2, 3, 0.08, 0.08), P.dgrey, { mirror: true }); });
-def('bm', 'Ballistic missile', 'Enemy weapons', 7.3, 1.9, B => missileBody(B, [0, 0, 0], 7.3, 0.92, P.enemy, { noseL: 2.4, nose: P.warhead, fins: 0.45, finC: 0.9, finSw: 20, tailR: 1 }));
-def('hgv', 'Hypersonic glide vehicle', 'Enemy weapons', 5.5, 2.2, B => {
-  // a flat wedge with a sharp nose and two small tail fins
-  const st = [{ x: 2.75, w: 0.02, h: 0.02, z: 0.4 }, { x: 1.5, w: 0.4, h: 0.18, z: 0.4, n: 3 }, { x: -1, w: 0.9, h: 0.3, z: 0.4, n: 3 }, { x: -2.75, w: 1.1, h: 0.35, z: 0.42, n: 3 }];
-  st.sort((a, b) => a.x - b.x);
-  loft(B, st, ANG.mid, (x, a) => (a > 90 && a < 270 ? P.warhead : P.enemy2), { cap0: P.nozzle, smooth: false });
-  for (const sg of [1, -1]) wing(B, plan(-1.8, sg * 0.95, 0.65, 0.6, 0.9, 0.4, 45, 90 - sg * 20, 0.06, 0.06), P.enemy2, {});
-});
-def('rkt', 'Guided rocket', 'Enemy weapons', 3.9, 0.6, B => missileBody(B, [0, 0, 0], 3.9, 0.23, P.enemy, { fins: 0.2, finC: 0.3, finRot: Math.PI / 4, mid: 0.08, midX: 1.3, midC: 0.25, nose: P.warhead }));
-def('arm', 'Anti-radiation missile', 'Enemy weapons', 4.2, 1.1, B => missileBody(B, [0, 0, 0], 4.2, 0.25, P.enemy, { mid: 0.36, midX: 0.6, midC: 0.9, fins: 0.3, finC: 0.35, nose: P.lgrey }));
-def('dcy', 'Air-launched decoy', 'Enemy weapons', 2.8, 1.7, B => { missileBody(B, [0, 0, 0], 2.8, 0.3, P.enemy, { fins: 0.25, finC: 0.3, finRot: Math.PI / 4 }); wing(B, plan(0.2, 0, 0.1, 0.85, 0.3, 0.22, 25, 0, 0.08, 0.08), P.enemy2, { mirror: true }); });
 def('ahe', 'Attack helicopter', 'Enemy weapons', 17.0, 17.2, B => heli(B, {
   L: 17.0, W: 1.9, H: 2.2, zc: 2.0, nose: 5.6, body: P.enemy2, under: P.enemy,
   cabin: [[5.6, 0.1, 0.16, -0.5, 2], [5.3, 0.5, 0.5, -0.3, 2.4], [4.5, 0.8, 0.8, -0.15], [3.2, 0.95, 1.05, 0.1], [0.3, 1, 1.1, 0.2], [-1.6, 0.85, 0.9, 0.3], [-2.6, 0.55, 0.55, 0.45]],
@@ -1482,7 +1446,7 @@ function finish(B, key) {
 IC.modelMesh.clear = () => { meshCache.clear(); for (const k in M) delete M[k]._size; };
 /* the builder, for other meshes made the same way (the 3D view's airport buildings): IC.MB.Builder(q), its shapes,
    and IC.MB.finish(B) for the arrays */
-IC.MB = { Builder, finish, box, lathe, cyl, loft, wing, plan, plate, around, sweep, missileBody, FOIL, ANG, P };
+IC.MB = { Builder, finish, box, lathe, cyl, loft, wing, plan, plate, around, sweep, missileBody, slimBody, prop, FOIL, ANG, P };
 /* what a model has that moves: its gear, flaps, rotors, propellers, radar, launcher, afterburner */
 IC.modelMoves = key => { const m = IC.modelMesh(key, 1), out = {}; for (const k in m.groups) out[m.groups[k].kind] = true; return out; };
 
@@ -1536,7 +1500,7 @@ IC.GA_LIVERY = [['#1f4f8f', '#c8323c'], ['#b0262e', '#2b2f36'], ['#20608a', '#8f
 IC.gaLivery = (n, cover) => { const l = IC.GA_LIVERY[Math.abs(n | 0) % IC.GA_LIVERY.length]; return cover ? [l[0], l[1], 'ga', 'cover'] : [l[0], l[1], 'ga']; };
 
 /* ---------- which model an object uses ---------- */
-const THR_MODEL = { civ: 'narrow', owa: 'owa', jdr: 'jdr', lm: 'lm', isr: 'isr', lacm: 'cm', mcm: 'cm', scm: 'scm', glb: 'glb', srbm: 'bm', marv: 'bm', mrbm: 'bm', pen: 'bm', hgv: 'hgv', rkt: 'rkt', arm: 'arm', dcy: 'dcy', ahe: 'ahe', ftr: 'ftr_e', str: 'str', sead: 'ftr_e', ewj: 'ewj', esj: 'esj', bmr: 'bmr', ga: 'light' };
+const THR_MODEL = { civ: 'narrow', owa: 'owa', jdr: 'jdr', lm: 'lm', isr: 'isr', lacm: 'cm', mcm: 'mcm', scm: 'scm', glb: 'glb', srbm: 'bm', marv: 'marv', mrbm: 'mrbm', pen: 'rv', hgv: 'hgv', rkt: 'rkt', arm: 'arm', dcy: 'dcy', ahe: 'ahe', ftr: 'ftr_e', str: 'str', sead: 'ftr_e', ewj: 'ewj', esj: 'esj', bmr: 'bmr', ga: 'light' };
 const KLASS_MODEL = { drone: 'drone', cm: 'cm', ballistic: 'bm', rocket: 'rkt', heli: 'ahe', fighter: 'ftr_e', bomber: 'bmr', jammer: 'ewj', airliner: 'narrow', light: 'light' };
 /* an aircraft type (IC.ACTYPES key) */
 IC.modelOfType = type => M[type] ? type : 'narrow';
@@ -1551,8 +1515,13 @@ IC.modelOfThreat = function (t, truth) {
 IC.modelOfAir = a => IC.modelOfType(IC.AIRKIND_TYPE[a.kind] || 'fighter');
 /* one of our units: the model shares the unit type's key */
 IC.modelOfUnit = type => M[type] ? type : 'truck';
-/* a missile in flight, ours or theirs */
-IC.modelOfMissile = m => m.mun === 'AAM' ? 'aam' : m.mun === 'GBU' ? 'gbu' : 'sam';
+/* one of our missiles in flight, by its munition (models-arms.js): each family its own shape and band of colour */
+const MUN_MODEL = { IR: 'irm', IR2: 'irm', SR: 'srm', MR: 'mrm', LR: 'sam', LRE: 'lre', VLR: 'vlr', TBD: 'tbd', HAT: 'hatm', EXO: 'exom', AAM: 'aam', INT: 'intd', GBU: 'gbu', CRS: 'crs', SRB: 'tbmu', RKT: 'grk' };
+IC.modelOfMissile = m => MUN_MODEL[m.mun] || 'sam';
+/* a strike in flight (S.strikes): ours by its munition, theirs a cruise missile */
+IC.modelOfStrike = s => s.side === 'us' ? MUN_MODEL[s.mun] || 'crs' : 'cm';
+/* an enemy fighter's missile at one of ours */
+IC.modelOfAam = m => m.ir ? 'eirm' : 'eaam';
 /* is this model an aircraft (it has flying attitudes, gear and lights) */
 const FLYING = { 'Civil aircraft': 1, 'Business aviation': 1, 'General aviation': 1, 'Rare visitors': 1, 'Our air wing': 1 };
 IC.modelIsAircraft = key => { const g = M[key] && M[key].group; return !!FLYING[g] || ['ahe', 'ftr_e', 'str', 'ewj', 'bmr', 'isr', 'esj'].includes(key); };
