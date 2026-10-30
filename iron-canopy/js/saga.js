@@ -118,7 +118,8 @@ const sceneId = (c, part) => `v3:${c.id}${part ? ':' + part : ''}`;
 IC.sagaRegister = function () {
   // the chapters in story order (stable: chapters in the same month keep the order they were written in)
   IC.SAGA.sort((a, b) => a.m - b.m);
-  const shot = L => { for (const p of L || []) if (!p.shot && p.art) p.shot = (IC.SAGA_SHOTS || {})[p.art] || ''; };
+  // each panel's storyboard words (shown until its painting is in art/cut), and where its picture comes from
+  const shot = L => { for (const p of L || []) { if (!p.shot && p.art) p.shot = (IC.SAGA_SHOTS || {})[p.art] || p.cap || ''; p.src = p.src || 'ai'; } };
   for (const c of IC.SAGA) {
     shot(c.p); shot(c.after);
     if (c.p && c.p.length) IC.CUTSCENES[sceneId(c)] = { title: c.t, v3: true, panels: c.p };
