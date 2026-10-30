@@ -92,7 +92,7 @@ function* gameSteps(opts) {
   IC.weatherInit(S);
   const story = mode === 'story';
   if (story) IC.storyForces(S); else if (mode !== 'academy') startingForces(S, sandbox);
-  IC.enemyInit(S);
+  IC.enemyInit(S, opts);
   if (mode !== 'academy') IC.avInit(S);
   IC.aspInit(S);
   IC.civilInit(S);

@@ -46,7 +46,7 @@ IC.sandboxTick = function (S, dt) {
     }
   }
   // the commander sits on its hands between the raids it is asked for
-  if (!X.auto && E.war && E.cycle) {
+  if (!X.auto && E.war && E.cycle && !(S.wp && S.wp.R)) {
     if (E.cycle.phase === 'buildup') E.cycle = { phase: 'calm', next: S.time + 3600, since: S.time };
     else if (E.cycle.phase === 'calm') E.cycle.next = Math.max(E.cycle.next, S.time + 3600);
   }
@@ -233,7 +233,7 @@ IC.sandboxPanel = function (S) {
     <div ${row}><select data-act="sbxForm" name="raid" style="max-width:12rem" title="The enemy picks its own weapons for the target, warns you through intelligence, and reports after">${raid}</select>${btn('sbxRaid', '', 'Enemy plans it', 'The enemy chooses its own mix of weapons for the target; intelligence warns you about 25 min ahead, and a report follows')}</div>
     <p class="hint" style="margin:0">Sent ${IC.sandboxSent(S)} · <span class="ok">shot down ${st.kills}</span> · <span class="${st.leaks ? 'hostile' : ''}">got through ${st.leaks}</span></p>
     <div ${row}>${rules}</div>
-    <div ${row}>${btn('sbxClear', '', 'Clear the sky', 'Take every enemy weapon and aircraft out of the sky')}${btn('sbxRepair', '', 'Repair everything', 'Units, airports, cities, power stations and roads, all as new')}</div>`;
+    <div ${row}><button class="btn sm pri" data-act="wp" data-v="open" title="Play their staff: place their batteries and plan their waves, fly them here, and export the plan for the game">War planner</button>${btn('sbxClear', '', 'Clear the sky', 'Take every enemy weapon and aircraft out of the sky')}${btn('sbxRepair', '', 'Repair everything', 'Units, airports, cities, power stations and roads, all as new')}</div>`;
 };
 IC.sandboxForm = function (S, name, value) { S.sbx.form[name] = value; };
 IC.sandboxAct = function (S, a, v) {

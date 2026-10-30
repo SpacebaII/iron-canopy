@@ -59,6 +59,10 @@ Work in waves. A wave starts only when the previous one is merged and `npm test`
 | 17 | [59 Tacview for film, and effects that hold up on screen](59-tacview-effects.md) | 58 | cameras and director in `replay3d.js`, new `render3d-war.js`, `render-combat.js` |
 | 17 | [60 The teaser: the enemy's first strike](60-teaser-first-strike.md) | 58, 59 | `tools/teaser.js`, `tools/teaser-score.js`, `docs/trailer/` |
 | 16 | [61 The front side and outlines: airports that are not a collection of rectangles](61-front-side.md) | — | `landside.js`, the outline tool in `builder.js`, `buildbar.js`, `inspector.js`'s landside rows, the gate in `growth.js` |
+| 18 | [76 The scripted war: the enemy flies a written plan](76-scripted-war.md) | #103 enemy weapons | new `warplan.js`, `war-homeland.js`; the calm and opening in `enemy.js` |
+| 18 | [77 The war planner in the Sandbox](77-war-planner.md) | 76 | new `planner.js`, `render-warplan.js`; the Sandbox panel |
+| 18 | [78 Counter-strikes with the Chief of Defence](78-counter-strikes.md) | 76 | new `strike.js`, `ui-strike.js`, `css/strike.css`; the `xstrike` mission in `air.js`; the Air room |
+| 18 | [79 The base at risk](79-base-at-risk.md) | 78 | `strike.js` (`IC.baseGuard`, `IC.strikeHomes`), `ui-strike.js`, `base:strike` in `warplan.js`, rearming in `air.js` |
 | — | [09 3D replay and tilt](09-tacview.md) | — | replaced by 22 |
 
 Wave 3 moves some drawing out of `render.js` into new files (`render-roads.js`, `render-combat.js`, `render-logistics.js`) so the three sessions do not edit the same lines. `growth.js` is shared: 10 owns city growth and the road tool, 13 owns the economy. The land war is removed (11); the game is aviation and air defence.

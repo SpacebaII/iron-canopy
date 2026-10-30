@@ -480,5 +480,14 @@
  "enemy weapons: a family we keep shooting down falls out of favour, its packets shrink, and it comes back slowly": 0.1,
  "enemy weapons: the first one identified of each version queues one card, a later version a card that says what it replaced": 0.1,
  "enemy weapons: six ballistic missiles at one target are one salvo of six with its impact time and target, another target another salvo": 0.1,
- "save: enemy weapons of a named version keep it through a save": 29.7
+ "save: enemy weapons of a named version keep it through a save": 29.7,
+ "war plan: the war flies the plan's waves in order, from its batteries, warned of and reported, and no other raids": 52,
+ "war plan: launchers destroyed do not fire in the next wave, and the warning and the report say so": 8.4,
+ "base at risk: a strike's jets can land elsewhere, rearm twice as long, and their answer is aimed where the jets park at the base they took off from": 40,
+ "base at risk: jets in the open die near a hit and most in hardened shelters come through; she says what would have saved them": 2,
+ "counter-strike: Voss advises a package, the jets fly there, what they destroy skips the next wave, and they retaliate": 33,
+ "counter-strike: she will not send a costly package into heavy air defence unless ordered, and an order against her advice costs her trust": 0.1,
+ "war planner: the exported file reads back as the same plan, and a wave made in the planner flies at once": 0.1,
+ "save: a war plan, its batteries and what was destroyed keep through a save": 35,
+ "map: the Career's war plan stands on their soil, fires at things that are there, and flies its first wave on the map": 31
 }

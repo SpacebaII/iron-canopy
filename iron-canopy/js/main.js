@@ -266,6 +266,7 @@ function leftClick(p, shift) {
       if (!shift || IC.callInState(S).charges < 1) IC.setMode(null); else IC.ui.refresh(true);
       return;
     }
+    if (m.kind === 'wpPlan') { IC.plannerClick(S, m, p, IC.cam.z); ping(p); return; }
     if (m.kind === 'sbxTarget') { IC.sandboxTarget(S, p, IC.cam.z); IC.setMode(null); ping(p); return; }
     if (m.kind === 'rangeTarget') { S.range.target = { x: p.x, y: p.y }; S.range.scen.target = { x: Math.round(p.x), y: Math.round(p.y) }; IC.setMode(null); ping(p); return; }
     if (m.kind === 'deploy' && S.range) {
@@ -430,6 +431,7 @@ function onAct(e) {
   if (b.tagName === 'INPUT' || b.tagName === 'SELECT') return;
   const a = b.dataset.act, v = b.dataset.v, id = b.dataset.id;
   if (a && a.startsWith('range') && a !== 'rangeForm' && S && S.range) { IC.rangeAct(S, a, v); IC.sfx && IC.sfx.ui('click'); IC.ui.refresh(true); return; }
+  if (a === 'wp' && S && S.sbx) { IC.plannerAct(S, v); IC.sfx && IC.sfx.ui('click'); IC.ui.refresh(true); return; }
   if (a && a.startsWith('sbx') && a !== 'sbxForm' && S && S.sbx) { IC.sandboxAct(S, a, v); IC.sfx && IC.sfx.ui('click'); IC.ui.refresh(true); return; }
   IC.sfx && IC.sfx.init();
   // before the first region is built only the start screen answers (IC.begin waits for the region)
@@ -639,6 +641,7 @@ function onAct(e) {
     case 'avYes': IC.avDecide(S, id, true); break;
     case 'avNo': IC.avDecide(S, id, false); break;
     case 'av': IC.avRoomAct(S, v, id); break;
+    case 'strk': IC.strikeAct(S, v); break;
     case 'zoneMode': ui.openRoom(null); IC.setMode({ kind: 'zone' }); return;
     case 'aspDraw': if (locked('airways')) return; ui.openRoom(null); S.layers.airways = true; IC.setMode(S.mode2 && S.mode2.kind === 'airway' && !id ? null : { kind: 'airway', from: id || null }); if (IC.cam.z < 0.04) { const c = IC.cap(S); IC.flyTo(c.x, c.y, 0.05); } return;
     case 'fixDel': IC.aspDelFix(S, id); S.sel = null; if (S.mode2 && S.mode2.from === id) S.mode2.from = null; break;
@@ -697,6 +700,7 @@ function onInput(e) {
   const el = e.target;
   if (el.dataset.act === 'rangeForm' && S.range) { IC.rangeForm(S, el.name, el.value); IC.ui.busyUntil = performance.now() + 1500; return; }
   // (a choice in a list redraws the panel at once: the bearing fields come and go with "from")
+  if ((el.dataset.act === 'wpForm' || el.dataset.act === 'wpFile') && S.wp) { IC.plannerForm(S, el); if (el.tagName === 'SELECT' || el.type === 'checkbox') IC.ui.refresh(true); else IC.ui.busyUntil = performance.now() + 1500; return; }
   if (el.dataset.act === 'sbxForm' && S.sbx) { IC.sandboxForm(S, el.name, el.value); if (el.tagName === 'SELECT') IC.ui.refresh(true); else IC.ui.busyUntil = performance.now() + 1500; return; }
   if (el.dataset.act === 'vol') { IC.sfx.setVol(+el.value / 100); IC.ui.saveCfg(); IC.ui.busyUntil = performance.now() + 600; }
   if (el.dataset.act === 'music') { IC.sfx.setMusic(+el.value / 100); IC.ui.saveCfg(); IC.ui.busyUntil = performance.now() + 600; }

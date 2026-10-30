@@ -1,0 +1,42 @@
+/* the counter-strike table with the Chief of Defence (js/ui-strike.js) */
+.sk-head{display:flex;gap:.9rem;align-items:flex-start}
+.sk-face{flex:none;border-radius:12px;overflow:hidden}
+.sk-head h3{margin:0}
+.sk-say{margin:.35rem 0 0;font-size:1.02rem;line-height:1.45;color:#e8eef3;font-style:italic}
+.sk-body{display:grid;grid-template-columns:minmax(14rem,18rem) 1fr;gap:1rem;margin-top:.8rem}
+@media (max-width:760px){.sk-body{grid-template-columns:1fr}}
+.sk-compass{display:grid;grid-template-columns:repeat(3,1fr);gap:.35rem;align-self:start}
+.sk-sec{display:grid;gap:.1rem;padding:.55rem .3rem;border-radius:10px;border:0;background:var(--well);color:#dce6ee;cursor:pointer;font:inherit;text-align:center}
+.sk-sec b{font-family:var(--display);font-size:1.3rem;letter-spacing:.08em}
+.sk-sec small{font-size:.7rem;color:var(--muted)}
+.sk-sec:hover:not(:disabled){background:rgba(255,91,79,.18)}
+.sk-sec[aria-pressed="true"]{background:rgba(255,91,79,.32);box-shadow:inset 0 0 0 1px rgba(255,91,79,.7)}
+.sk-sec:disabled{opacity:.35;cursor:default}
+.sk-mid{display:grid;place-items:center;font-size:.75rem;color:var(--dim);border-radius:50%;background:radial-gradient(circle,rgba(111,210,255,.18),transparent 70%)}
+.sk-kinds{display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.6rem}
+.sk-kinds .btn em{font-style:normal;color:var(--muted);margin-left:.3rem;font-size:.8rem}
+.sk-kinds .btn[aria-pressed="true"]{background:rgba(255,91,79,.3)}
+.sk-pkgs{display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:.5rem}
+.sk-pkg{padding:.6rem .7rem;border-radius:10px;background:var(--well);display:grid;gap:.4rem;align-content:start}
+.sk-pkg h4{margin:0;font-size:.95rem;display:flex;justify-content:space-between;gap:.4rem}
+.sk-pkg h4 em{font-style:normal;font-size:.72rem;color:var(--ok);text-transform:uppercase;letter-spacing:.08em}
+.sk-pkg.rec{box-shadow:inset 0 0 0 1px var(--ok)}
+.sk-pkg.no{opacity:.85}
+.sk-pkg .kv{font-size:.85rem}
+.sk-home{margin-top:.6rem;padding:.6rem .7rem;border-radius:10px;background:var(--well)}
+.sk-home h4{margin:0 0 .3rem;font-size:.95rem;display:flex;justify-content:space-between;gap:.4rem}
+.sk-home h4 em{font-style:normal;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ok)}
+.sk-home.sk-high h4 em{color:var(--hostile)}
+.sk-home.sk-some h4 em{color:var(--amber)}
+.sk-home p{margin:0 0 .5rem;font-size:.88rem;line-height:1.4}
+.sk-home .btn[aria-pressed="true"]{background:rgba(111,210,255,.28)}
+.btn.warn{background:rgba(242,180,65,.22);color:#f4dca4}
+.btn.warn:hover:not(:disabled){background:rgba(242,180,65,.4)}
+/* the war planner in the Sandbox (js/planner.js): the left column widens for it */
+.app.is-plan .leftcol{width:27rem}
+.app.is-plan .comms{display:none}
+.app.is-plan .brief{flex:1 1 auto}
+.app.is-plan .brief .li.on{box-shadow:inset 0 0 0 1px var(--hostile)}
+.app.is-plan .brief select{max-width:13rem}
+.app.is-plan .brief input:not([type=checkbox]){background:var(--well);color:inherit;border:0;border-radius:6px;padding:.15rem .3rem;font:inherit;font-size:.85rem}
+.app.is-plan .sk-scroll{max-height:14rem;overflow:auto;scrollbar-width:thin}
