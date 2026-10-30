@@ -9016,7 +9016,7 @@ const sagaRun = (S, until, maxH) => {
   while (S.time < t1 && !until()) {
     const busy = (S.enemy.raid && S.enemy.raid.launched) || S.threats.some(t => !t.dead && !t.d.civil && t.type !== 'ftr');
     S.paused = false; IC.step(S, busy ? 0.5 : 8);
-    if (S.story.cutQ.length) IC.cutSkipAll(S);
+    if ((S.story.cutQ || []).length) IC.cutSkipAll(S);
   }
 };
 const sagaAt = (S, id) => { const c = IC.SAGA[S.story.v3.i]; return c && c.id === id; };
