@@ -4636,6 +4636,58 @@ test('height: an interceptor passing 8 km above or below a target does not hit i
   assert(passed >= 2, `the misses were not reported as passing above or below (${passed})`);
   assert(shoot(0).dead, 'an interceptor at the target\'s height and position did not kill it');
 });
+/* ---------- what makes an intercept hard (brief 79) ---------- */
+test('intercepts: a low cruise missile hides in the ground clutter, rain blinds a heat-seeker more than a radar, and a fast one is hard to fuse on', () => {
+  const S = range(), T = S.range.target, u = IC.rangeAddUnit(S, 'shorad', T.x, T.y);
+  S.weather = { kind: 'clear', prev: 'clear', fade: 1, next: S.time + 1e6 };
+  const at = (type, alt) => { const t = IC.spawnThreat(S, type, T.x + 100, T.y, { route: [{ x: T.x, y: T.y }], aim: { x: T.x, y: T.y }, alt }); t.vx = -t.spd; return t; };
+  const keys = (M, t) => IC.icptFactors(S, u, t, M, 1, 1, 1).F.map(x => x.k);
+  const low = at('lacm', 0.04), high = at('jdr', 2.5);
+  assert(keys(IC.MUN.SR, low).includes('clutter'), 'a cruise missile 40 m up is not in the ground clutter for a radar-guided round');
+  assert(!keys(IC.MUN.SR, high).includes('clutter'), 'a drone 2.5 km up is in the ground clutter');
+  assert(!keys(IC.MUN.IR, low).includes('clutter'), 'a heat-seeker cares about the radar\'s ground clutter');
+  const clear = { ir: IC.icptFactors(S, u, high, IC.MUN.IR, 1, 1, 1).pk, sr: IC.icptFactors(S, u, high, IC.MUN.SR, 1, 1, 1).pk };
+  S.weather = { kind: 'storm', prev: 'storm', fade: 1, next: S.time + 1e6 };
+  const ir = IC.icptFactors(S, u, high, IC.MUN.IR, 1, 1, 1).pk / clear.ir, sr = IC.icptFactors(S, u, high, IC.MUN.SR, 1, 1, 1).pk / clear.sr;
+  assert(ir < 0.75 && sr < 1 && sr > ir, `in a storm a heat-seeker keeps ${Math.round(ir * 100)}% of its chance and a radar round ${Math.round(sr * 100)}%`);
+  const scm = at('scm', 12), drone = at('owa', 0.4);
+  assert(IC.icptFactors(S, u, scm, IC.MUN.SR, 1, 1, 1).F.some(x => x.k === 'speed'), 'a supersonic cruise missile is no harder to fuse on than a drone');
+  assert(!IC.icptFactors(S, u, drone, IC.MUN.SR, 1, 1, 1).F.some(x => x.k === 'speed'), 'a slow drone is too fast for the fuse');
+  assert(IC.icptFactors(S, u, at('mcm', 0.03), IC.MUN.SR, 1, 1, 1).F.some(x => x.k === 'manoeuvre'), 'a manoeuvring cruise missile carries no manoeuvre factor');
+});
+test('intercepts: every miss the factors take is put down to one of them, by its share, and says so', () => {
+  const m = { pk: 0.8 * 0.5 * 0.8, pkB: 0.8, fac: [{ k: 'clutter', f: 0.5 }, { k: 'weather', f: 0.8 }], M: IC.MUN.SR };
+  const n = { hit: 0, plain: 0, clutter: 0, weather: 0 };
+  for (let i = 0; i < 20000; i++) { const R = IC.icptRoll(m); n[R.hit ? 'hit' : R.cause || 'plain']++; }
+  assert(Math.abs(n.hit / 20000 - m.pk) < 0.02, `it hit ${n.hit} of 20000 at a chance of ${m.pk}`);
+  assert(Math.abs(n.plain / 20000 - 0.2) < 0.02, `${n.plain} plain misses, where the round's own chance leaves 20%`);
+  const share = Math.log(0.5) / (Math.log(0.5) + Math.log(0.8));
+  assert(Math.abs(n.clutter / (n.clutter + n.weather) - share) < 0.03, `the clutter took ${n.clutter} and the weather ${n.weather} of the misses`);
+  assert(IC.icptWord(m, 'clutter') === 'LOST IN GROUND CLUTTER' && IC.icptWord(m, 'weather') === 'RAIN ON THE RADAR', 'the words for the causes are wrong');
+  assert(IC.icptWord({ M: IC.MUN.IR }, 'weather') === 'LOST IT IN CLOUD', 'a heat-seeker lost in the weather says rain on the radar');
+});
+test('intercepts: sea-skimmers in a storm are harder to hit, each miss says why, and tracks wait while the battery is busy', () => {
+  const play = wk => {
+    const S = range(), T = S.range.target, u = IC.rangeAddUnit(S, 'shorad', T.x + 20, T.y);
+    S.weather = { kind: wk, prev: wk, fade: 1, next: S.time + 1e6 };
+    const words = [], seen = new Set(), pk = new Map();
+    IC.on((S2, type, d) => { if (S2 === S && type === 'mstat' && d.what === 'miss') words.push(d.text); });
+    IC.rangeSpawn(S, { what: 'lacm', n: 12, brg: 90, km: 40, alt: '' });
+    let waited = 0;
+    runRange(S, 1800, S => {
+      for (const t of S.threats) if (!seen.has(t) && IC.icptUnanswered(S, t) === u) { seen.add(t); waited++; }
+      for (const m of S.missiles) if (!pk.has(m.id)) pk.set(m.id, m.pk);
+      return S.range.pending.length === 0 && S.threats.every(t => t.dead) && S.time - S.range.t0 > 60;
+    });
+    const sys = IC.rangeStats(S).sys.find(x => x.sys === 'shorad') || { shots: 0, kills: 0 };
+    return { words, waited, sys, pk: [...pk.values()].reduce((a, b) => a + b, 0) / Math.max(1, pk.size) };
+  };
+  const clear = play('clear'), storm = play('storm');
+  assert(storm.sys.shots > 0 && clear.sys.shots > 0, 'the battery never fired');
+  assert(storm.pk < clear.pk * 0.95, `a storm made each shot no harder (a chance of ${storm.pk.toFixed(2)} against ${clear.pk.toFixed(2)} in clear weather)`);
+  assert(storm.words.some(w => w === 'LOST IN GROUND CLUTTER' || w === 'RAIN ON THE RADAR'), `no miss in the storm said why: ${storm.words.join(', ')}`);
+  assert(clear.waited + storm.waited > 0, 'no cruise missile ever waited while the battery was busy with another');
+}, true);
 test('height: a long-reach missile reaches less far against a low target, as its table says', () => {
   const M = IC.MUN.LR, low = IC.reachAt(M, 0.04), high = IC.reachAt(M, 8), R = IC.REACH.LR;
   assert(high === M.range, `at 8 km the long-range missile should reach its full ${M.range / 10} km (got ${high / 10})`);
