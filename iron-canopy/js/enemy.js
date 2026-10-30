@@ -166,6 +166,8 @@ function pickTarget(S, purpose) { const L = targets(S, purpose); return L.length
 /* an aim point on the objective: the government quarter of a capital is its core blocks */
 function aimOn(obj) {
   const r = obj.ref;
+  // (brief 79) a strike on where our jets park
+  if (obj.pts && obj.pts.length) { const q = U.pick(obj.pts); return { x: q.x + U.rand(-0.08, 0.08), y: q.y + U.rand(-0.08, 0.08) }; }
   if (r && r.parts) return aimAtBase(r, obj.only);
   if (r && r.capital && obj.set === 'command') { const b = U.pick(r.blocks.filter(b => b.core && b.hp > 0)); if (b) return { x: b.x, y: b.y }; }
   return { x: obj.x + U.rand(-4, 4), y: obj.y + U.rand(-4, 4) };

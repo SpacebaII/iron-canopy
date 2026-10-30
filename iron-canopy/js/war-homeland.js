@@ -136,10 +136,11 @@ IC.WAR_PLANS.homeland = {
       ]},
     {"id":"wr","name":"retaliation strike","retaliation":true,"gap":[1,1.5],
       "intel":"They have sworn retaliation for our strikes on their soil.",
-      "say":[{"who":"KOLAR","text":"(their state television) For every bomb on our soil, ten on theirs. The Federation answers."}],
+      "say":[{"who":"KOLAR","text":"(their state television) For every bomb on our soil, ten on theirs. The Federation answers."},
+        {"who":"VOLKAN","text":"(intercepted) Their jets came from one field. They are on the ground there now, refuelling. Put everything on it."}],
       "hits":[
-        {"bat":"mb2b","n":4,"at":"city:Fort Ashby","t":0},
-        {"bat":"cm30","n":4,"at":"apt:busiest","alt":["set:city"],"t":0},
+        {"bat":"mb2b","n":4,"at":"base:strike","alt":["city:Fort Ashby"],"t":0},
+        {"bat":"cm30","n":6,"at":"base:strike","alt":["apt:busiest","set:city"],"t":0},
         {"bat":"dr_senitz","n":6,"at":"city:Hollin","t":-300}
       ]}
   ]

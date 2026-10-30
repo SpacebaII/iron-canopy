@@ -62,6 +62,7 @@ Work in waves. A wave starts only when the previous one is merged and `npm test`
 | 18 | [76 The scripted war: the enemy flies a written plan](76-scripted-war.md) | #103 enemy weapons | new `warplan.js`, `war-homeland.js`; the calm and opening in `enemy.js` |
 | 18 | [77 The war planner in the Sandbox](77-war-planner.md) | 76 | new `planner.js`, `render-warplan.js`; the Sandbox panel |
 | 18 | [78 Counter-strikes with the Chief of Defence](78-counter-strikes.md) | 76 | new `strike.js`, `ui-strike.js`, `css/strike.css`; the `xstrike` mission in `air.js`; the Air room |
+| 18 | [79 The base at risk](79-base-at-risk.md) | 78 | `strike.js` (`IC.baseGuard`, `IC.strikeHomes`), `ui-strike.js`, `base:strike` in `warplan.js`, rearming in `air.js` |
 | — | [09 3D replay and tilt](09-tacview.md) | — | replaced by 22 |
 
 Wave 3 moves some drawing out of `render.js` into new files (`render-roads.js`, `render-combat.js`, `render-logistics.js`) so the three sessions do not edit the same lines. `growth.js` is shared: 10 owns city growth and the road tool, 13 owns the economy. The land war is removed (11); the game is aviation and air defence.

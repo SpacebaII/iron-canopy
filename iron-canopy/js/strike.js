@@ -130,8 +130,13 @@ IC.strikeTalk = function (S, sec, grp) {
   if (o.rest.length) line += ` ${o.rest.map(B => B.name).join(' and ')} ${o.rest.length > 1 ? 'are' : 'is'} too far from there for the same strike.`;
   if (rec) line += ` My advice: ${rec.o.pkg.words}. I expect to destroy about ${Math.round(rec.o.kills)} and to lose ${rec.o.lossJets < 0.5 ? 'nobody, with luck' : `about ${Math.round(rec.o.lossJets)} aircraft`}.`;
   else line += ` I will not send crews into that for what we would get. ${trust >= 25 ? 'If you order it, I will fly it, and it will be on you.' : 'Find another Chief of Defence if you want it done.'}`;
-  if (E && E.war) line += ' And they will answer: expect a retaliation strike.';
-  return { sec, grp, line, pk, rec: rec ? odds.indexOf(rec.o) : -1, jets, trust, canInsist: trust >= 25 };
+  // (brief 79) where the jets come back to, and what waits for them there
+  const home = F[0].b, G = IC.baseGuard(S, home), away = IC.strikeHomes(S, home, at);
+  const turn = IC.AIR_KIND.ftr.turn * 2 * (home.parts ? IC.baseStatus(S, home).turn : 1);
+  let base = ` The jets come back to ${home.name} and spend about ${U.dur(turn)} on the ground rearming. ${G.words}`;
+  if (E && E.war) base += ` They will have watched them take off: expect their answer on ${home.name}.`;
+  if (G.risk === 'high') base += ` ${away.length ? `If you want them out of it, they can land at ${away[0].name} instead.` : 'Fix that before you send them.'}`;
+  return { sec, grp, line, base, pk, rec: rec ? odds.indexOf(rec.o) : -1, jets, trust, canInsist: trust >= 25, home, guard: G, away };
 };
 /* why no strike can be flown now, or '' */
 IC.strikeBlock = function (S) {
@@ -147,7 +152,7 @@ const waveMark = S => S.wp ? S.wp.i * 1000 + S.wp.loopN + (S.enemy.raidN || 0) *
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 
 /* ---------- ordering it ---------- */
-IC.strikeOrder = function (S, sec, grp, pk, insist) {
+IC.strikeOrder = function (S, sec, grp, pk, insist, to) {
   const X = S0(S), talk = IC.strikeTalk(S, sec, grp);
   if (talk.block) return { ok: false, why: talk.line };
   const p = talk.pk[pk];
@@ -162,21 +167,26 @@ IC.strikeOrder = function (S, sec, grp, pk, insist) {
   const need = o.all, use = [];
   let got = 0;
   for (const f of F) { if (got >= need) break; use.push(f); got += f.r.n; }
-  const st = { id: ++X.n, sec, grp, pk, t: S.time, at: o.at, odds: { loss: o.loss, kills: o.kills }, bats: o.bats.map(B => B.id), out: [], back: 0, lost: 0, killed: [], arrived: 0, insisted: !p.ok };
+  // (brief 79) they watch where a strike takes off from; the jets may land somewhere else afterwards
+  const from = {}; for (const f of use) from[f.b.id] = (from[f.b.id] || 0) + f.r.n;
+  const fromId = Object.keys(from).sort((a, b) => from[b] - from[a])[0];
+  const dest = to && talk.away.find(b => b.id === to) ? to : null;
+  const st = { id: ++X.n, sec, grp, pk, t: S.time, at: o.at, odds: { loss: o.loss, kills: o.kills }, bats: o.bats.map(B => B.id), out: [], back: 0, lost: 0, killed: [], arrived: 0, insisted: !p.ok, from: fromId, to: dest };
+  X.from = fromId;
   // which flights bomb, which escort and which hunt radars: bombers first, in the order the jets were found
   let bomb = o.jets, esc = o.pkg.escort, sead = o.pkg.sead ? 2 : 0;
   for (const f of use) {
     const role = bomb > 0 ? 'bomb' : esc > 0 ? 'escort' : sead > 0 ? 'sead' : 'bomb';
     if (role === 'bomb') bomb -= f.r.n; else if (role === 'escort') esc -= f.r.n; else sead -= f.r.n;
     f.r.load = role === 'bomb' ? 'strike' : 'aa';
-    const a = IC.launchAir(S, f.r, { type: 'xstrike', x: o.at.x, y: o.at.y, sid: st.id, role, site: { name: `${IC.WP_GRP[grp].name.toLowerCase()} in the ${IC.wpSectorWord(sec)}` } });
+    const a = IC.launchAir(S, f.r, { type: 'xstrike', x: o.at.x, y: o.at.y, sid: st.id, role, to: dest, site: { name: `${IC.WP_GRP[grp].name.toLowerCase()} in the ${IC.wpSectorWord(sec)}` } });
     if (a) st.out.push({ id: a.id, name: f.r.name, n: f.r.n, role });
   }
   if (!st.out.length) return { ok: false, why: 'None of the flights could get off the ground.' };
   X.cur.push(st);
   const mk = waveMark(S); if (X.wave !== mk) { X.wave = mk; X.used = 0; } X.used++;
   X.log.unshift(st); if (X.log.length > 20) X.log.length = 20;
-  IC.say && IC.say(S, 'CDS', `${st.out.map(f => f.name).join(', ')} going. ${o.pkg.words.charAt(0).toUpperCase() + o.pkg.words.slice(1)}, for the ${IC.WP_GRP[grp].name.toLowerCase()} in the ${IC.wpSectorWord(sec)}. You will see them cross the border.`);
+  IC.say && IC.say(S, 'CDS', `${st.out.map(f => f.name).join(', ')} going. ${o.pkg.words.charAt(0).toUpperCase() + o.pkg.words.slice(1)}, for the ${IC.WP_GRP[grp].name.toLowerCase()} in the ${IC.wpSectorWord(sec)}. You will see them cross the border.${dest ? ` They land at ${S.byId[dest].name} afterwards.` : ''}`);
   IC.emit(S, 'strikeOrdered', st);
   return { ok: true, st };
 };
@@ -186,6 +196,7 @@ IC.strikeArrive = function (S, a, m) {
   const X = S0(S), st = X.cur.find(s => s.id === m.sid);
   if (!st || m.done) return;
   m.done = true;
+  if (m.to && a.r && S.byId[m.to]) a.r.base = m.to;
   const o = IC.strikeOdds(S, st.sec, st.grp, st.pk) || { loss: st.odds.loss };
   const where = `over the ${IC.wpSectorWord(st.sec)}`;
   // every jet of the flight runs the gauntlet
@@ -233,6 +244,57 @@ IC.strikeGone = function (S, a, m) {
   if (st.arrived >= st.out.length) finish(S, X, st);
 };
 IC.on((S, type, a) => { if (type === 'acLost' && a && a.dead && a.mission && a.mission.type === 'xstrike') IC.strikeGone(S, a, a.mission); });
+/* ---------- the base the jets come home to (brief 79) ----------
+   A strike tells them where our jets are: they watch them take off, and their answer comes on that base while the
+   jets are on the ground rearming. Keeping them alive there is the player's job: hardened shelters (nine in ten come
+   through a hit close by), a battery over the base, a fuel farm away from the shelters, or landing them elsewhere. */
+IC.baseGuard = function (S, b) {
+  let jets = 0, shel = 0, half = 0, open = 0;
+  for (const r of S.roster) {
+    if (r.base !== b.id || r.st === 'lost') continue;
+    const n = r.n || 1, q = IC.parkPos(S, b, r); jets += n;
+    if (q.fac && q.fac.kind === 'has') shel += n; else if (q.fac) half += n; else open += n;
+  }
+  const cover = S.units.filter(u => u.d.cat === 'ad' && u.state === 'ready' && IC.maxRange(S, u) > 0 && U.dist(u, b) <= IC.maxRange(S, u) * 0.9);
+  const fuel = (b.parts || []).filter(p => p.kind === 'fuel' && p.built && p.hp > 0).map(f => IC.fuelNear(b, f)).filter(Boolean);
+  const risk = open && !cover.length ? 'high' : open || !cover.length ? 'some' : 'low';
+  const parts = [shel && `${shel} in hardened shelters`, half && `${half} in hangars or alert sheds`, open && `${open} on open stands`].filter(Boolean);
+  let words = jets ? `${b.name} has ${jets} aircraft: ${parts.join(', ')}.` : `${b.name} has no aircraft of ours on it.`;
+  words += cover.length ? ` ${cover.length > 1 ? `${cover.length} of our batteries cover it` : `${cover[0].name} covers it`}.` : ' None of our air defence covers it.';
+  if (open) words += ' A missile that lands near a jet in the open destroys it four times in five; in a hardened shelter, once in ten.';
+  if (fuel.length) words += ` ${IC.fuelNearText(fuel[0])}`;
+  return { jets, shel, half, open, cover, fuel, risk, words };
+};
+/* where the jets could land after a strike instead of coming home: our other bases they can use and reach on the fuel
+   a round trip home would take, nearest home first (an airliners' airport too: it is war, and they are ours) */
+IC.strikeHomes = function (S, home, at) {
+  const T = IC.ACTYPES[IC.AIRKIND_TYPE.ftr], K = IC.AIR_KIND.ftr, reach = K.endur * K.spd * IC.STRIKE.reach;
+  return IC.bases(S).filter(b => b !== home && b.owner === 'us' && b.parts && b.active !== false && !b.offline && (b.kind === 'airbase' || b.kind === 'airport')
+    && (b.st && b.st.longest || 0) >= T.rwy && IC.baseStatus(S, b).runway && (!at || U.dist(home, at) + U.dist(at, b) <= 2 * reach))
+    .sort((a, b) => U.dist(a, home) - U.dist(b, home)).slice(0, 3);
+};
+/* jets lost on the ground in a raid: she says so after it, with what would have saved them */
+IC.on((S, type, d) => {
+  if (type !== 'baseHit' || !d.milLost || !S.wp || !S.enemy || !S.enemy.war) return;
+  const hurt = S0(S).hurt || (S0(S).hurt = {});
+  hurt[d.base.id] = (hurt[d.base.id] || 0) + d.milLost;
+});
+IC.on((S, type) => {
+  if (type !== 'raidOver' || !S.strike || !S.strike.hurt) return;
+  const hurt = S.strike.hurt; S.strike.hurt = null;
+  for (const id of Object.keys(hurt)) {
+    const b = S.byId[id]; if (!b) continue;
+    const G = IC.baseGuard(S, b), fix = [];
+    if (G.open) fix.push(`hardened shelters for the ${G.open} still in the open`);
+    if (!G.cover.length) fix.push('a battery over the base');
+    if (G.fuel.length) fix.push('the fuel farm further from the shelters');
+    const n = hurt[id], text = `${n} of our aircraft ${n > 1 ? 'were' : 'was'} destroyed on the ground at ${b.name}.${fix.length ? ` What would have saved them: ${fix.join(', ')}, or the jets landing somewhere else after a strike.` : ''}`;
+    IC.log(S, 'leak', 'AIR', text, b);
+    IC.say && IC.say(S, 'CDS', `They caught them on the ground at ${b.name}: ${hurt[id]} aircraft gone without leaving the runway.${fix.length ? ` ${fix[0].charAt(0).toUpperCase() + fix[0].slice(1)}.` : ''}`);
+    if (S.camp && IC.card) IC.card(S, 'Aircraft lost on the ground', `${b.name} · ${U.clock(S.time, S)}`, text, 'report');
+    IC.emit(S, 'groundLoss', { base: b, n: hurt[id], guard: G });
+  }
+});
 /* after their first raid, she says what can be done about the launchers */
 IC.on((S, type, R) => {
   if (type !== 'raidOver' || !S.wp || !S.enemy || !S.enemy.war || S.mode === 'test') return;

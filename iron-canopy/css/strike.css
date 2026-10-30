@@ -23,6 +23,13 @@
 .sk-pkg.rec{box-shadow:inset 0 0 0 1px var(--ok)}
 .sk-pkg.no{opacity:.85}
 .sk-pkg .kv{font-size:.85rem}
+.sk-home{margin-top:.6rem;padding:.6rem .7rem;border-radius:10px;background:var(--well)}
+.sk-home h4{margin:0 0 .3rem;font-size:.95rem;display:flex;justify-content:space-between;gap:.4rem}
+.sk-home h4 em{font-style:normal;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ok)}
+.sk-home.sk-high h4 em{color:var(--hostile)}
+.sk-home.sk-some h4 em{color:var(--amber)}
+.sk-home p{margin:0 0 .5rem;font-size:.88rem;line-height:1.4}
+.sk-home .btn[aria-pressed="true"]{background:rgba(111,210,255,.28)}
 .btn.warn{background:rgba(242,180,65,.22);color:#f4dca4}
 .btn.warn:hover:not(:disabled){background:rgba(242,180,65,.4)}
 /* the war planner in the Sandbox (js/planner.js): the left column widens for it */

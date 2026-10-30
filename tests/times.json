@@ -483,6 +483,8 @@
  "save: enemy weapons of a named version keep it through a save": 29.7,
  "war plan: the war flies the plan's waves in order, from its batteries, warned of and reported, and no other raids": 52,
  "war plan: launchers destroyed do not fire in the next wave, and the warning and the report say so": 8.4,
+ "base at risk: a strike's jets can land elsewhere, rearm twice as long, and their answer is aimed where the jets park at the base they took off from": 40,
+ "base at risk: jets in the open die near a hit and most in hardened shelters come through; she says what would have saved them": 2,
  "counter-strike: Voss advises a package, the jets fly there, what they destroy skips the next wave, and they retaliate": 33,
  "counter-strike: she will not send a costly package into heavy air defence unless ordered, and an order against her advice costs her trust": 0.1,
  "war planner: the exported file reads back as the same plan, and a wave made in the planner flies at once": 0.1,

@@ -23,7 +23,7 @@ const WHEN = [['prev', 'After the wave before'], ['war', 'Hours after the war st
 const whenKind = w => { const h = w.when || {}; return h.war != null ? 'war' : h.after ? 'after' : h.flag ? 'flag' : h.beat ? 'beat' : 'prev'; };
 const whenWords = w => { const h = w.when || {}, hr = v => Array.isArray(v) ? `${v[0]}–${v[1]} h` : `${v} h`; const k = whenKind(w);
   return w.retaliation ? 'whenever we strike their soil' : k === 'war' ? `${hr(h.war)} into the war` : k === 'after' ? `${hr(h.h != null ? h.h : [2.5, 4])} after ${h.after}` : k === 'flag' ? `when "${h.flag}" is set` : k === 'beat' ? `after the beat "${h.beat}"` : `${hr(w.gap || [2.5, 4])} after the wave before`; };
-const SPECIAL = [['apt:busiest', 'Our busiest airport'], ['apt:capital', "The capital's airport"], ['apt:north', 'Our airport nearest the border'], ['base:main', 'Our main air base'], ['command:capital', 'The government quarter'], ['ad:radar', 'A radar they know of'], ['ad:sam', 'A missile battery they know of'], ['ad:busiest', 'The battery that fired most'],
+const SPECIAL = [['apt:busiest', 'Our busiest airport'], ['apt:capital', "The capital's airport"], ['apt:north', 'Our airport nearest the border'], ['base:main', 'Our main air base'], ['base:strike', 'The base our last strike flew from'], ['command:capital', 'The government quarter'], ['ad:radar', 'A radar they know of'], ['ad:sam', 'A missile battery they know of'], ['ad:busiest', 'The battery that fired most'],
   ...Object.keys(IC.ESETS).map(k => ['set:' + k, `The best of ${IC.ESETS[k].name}`])];
 
 /* ---------- opening ---------- */

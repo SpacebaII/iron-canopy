@@ -8810,7 +8810,7 @@ const wpPlan = S => {
   waves: [
     { id: 'w1', name: 'first wave', when: { war: 0.2 }, warn: 30, intel: 'Test warning.', hits: [{ bat: 'bm', n: 2, at: 'base:main' }, { bat: 'cm', n: 2, at: 'base:main', t: 30 }] },
     { id: 'w2', name: 'second wave', when: { after: 'w1', h: 0.5 }, hits: [{ bat: 'bm', n: 6, at: 'base:main' }, { bat: 'cm', n: 2, at: 'base:main', t: -60 }] },
-    { id: 'wr', name: 'retaliation strike', retaliation: true, gap: [0.2, 0.3], hits: [{ bat: 'cm', n: 2, at: 'base:main' }] }] };
+    { id: 'wr', name: 'retaliation strike', retaliation: true, gap: [0.2, 0.3], hits: [{ bat: 'cm', n: 2, at: 'base:strike' }] }] };
 };
 const wpGame = () => {
   if (wpS) return wpS;
@@ -8896,6 +8896,69 @@ test('counter-strike: she will not send a costly package into heavy air defence 
   assert(yes.ok && yes.st.insisted, `ordered anyway, it did not fly: ${yes.why}`);
   assert(S.story ? IC.trustOf(S, 'CDS') < t0 : true, 'her trust did not fall');
 }, true, 'warplan');
+test('base at risk: a strike\'s jets can land elsewhere, rearm twice as long, and their answer is aimed where the jets park at the base they took off from', () => {
+  const S = wpWar(wpGame()), sp = S.wp.plan.batteries.find(b => b.id === 'sam');
+  sp.n = 1; sp.R = 300; IC.wpRebuild(S);
+  const X = S.wp, B = X.bats.bm, sec = IC.wpSector(S, B.x, B.y);
+  S.strike = null; S.enemy.retaliate = 0; S.enemy.raid = null; X.R = null;
+  for (const a of S.air) if (!a.dead && a.r) { a.dead = true; a.r.st = 'ready'; a.r.ent = null; }
+  for (const r of S.roster) if (r.kind === 'ftr' && r.st !== 'lost') { r.st = 'ready'; r.n = r.nMax || 2; }
+  const talk = IC.strikeTalk(S, sec, 'bal');
+  assert(!talk.block && talk.home && talk.away.length, `no base to land at instead: ${talk.line}`);
+  assert(/on the ground rearming/.test(talk.base) && /expect their answer on/.test(talk.base), `she does not say what waits at home: ${talk.base}`);
+  const home = talk.home, to = talk.away[0].id, k = talk.pk.findIndex(p => p.enough);
+  const r = IC.strikeOrder(S, sec, 'bal', k, true, to);
+  assert(r.ok && r.st.from === home.id && r.st.to === to, `the order: ${r.why || ''} from ${r.st && r.st.from} to ${r.st && r.st.to}`);
+  const fl = r.st.out.map(f => S.air.find(a => a.id === f.id).r);
+  let turn = 0;
+  wpRun(S, 6, () => { for (const q of fl) if (q.st === 'turn') turn = Math.max(turn, q.t); return fl.every(q => q.st !== 'air'); });
+  const back = fl.filter(q => q.st !== 'lost');
+  assert(back.length && back.every(q => q.base === to), `they came down at ${back.map(q => q.base).join(', ')}`);
+  assert(turn > IC.AIR_KIND.ftr.turn * 1.9, `rearming after a strike took ${turn} s`);
+  // their answer: on the base the jets took off from, at where they park
+  const tg = IC.wpTarget(S, 'base:strike');
+  assert(tg && tg.ref === home && tg.pts.length, 'the base the strike flew from is not their target');
+  assert(tg.pts.every(p => U.dist(p, home) < 60), 'an aim point is off the base');
+  let R = null; IC.on((S2, type, d) => { if (S2 === S && type === 'wavePlanned') R = d.R; });
+  X.R = null; S.enemy.raid = null; S.enemy.cycle = { phase: 'calm', next: S.time };
+  wpRun(S, 0.2, () => !!R);
+  assert(R && R.wave === 'wr' && R.ops.every(o => o.obj === home), `the retaliation went for ${R && R.ops.map(o => o.obj && o.obj.name).join(', ')}`);
+}, true, 'warplan');
+test('base at risk: jets in the open die near a hit and most in hardened shelters come through; she says what would have saved them', () => {
+  const S = wpWar(wpGame()), mb = IC.mainBase(S);
+  // two flights of our own: one parked on an open stand, the rest shelter as they always do
+  const fo = IC.newFlight(S, 'ftr', 'TEST OPEN', mb.id); fo.park = 'open';
+  S.roster.push(IC.newFlight(S, 'ftr', 'TEST SHELTER', mb.id), fo);
+  for (const p of mb.parts) if (p.max) p.hp = p.max;
+  IC.assignSlots(S, mb);
+  const L = S.roster.filter(r => r.base === mb.id && r.st !== 'lost');
+  const shel = L.find(r => { const q = IC.parkPos(S, mb, r); return q.fac && q.fac.kind === 'has'; });
+  const open = L.find(r => !IC.parkPos(S, mb, r).fac);
+  assert(shel && open, 'the base has no jet in a shelter and one in the open');
+  const G = IC.baseGuard(S, mb);
+  assert(G.jets === G.shel + G.half + G.open && G.open && /in hardened shelters/.test(G.words) && /on open stands/.test(G.words), `the base in words: ${G.words}`);
+  const keep = mb.parts.map(p => p.hp), stands = mb.parts.flatMap(p => p.stands || []), slot = r => [r.slot, r.n];
+  const mend = () => { mb.parts.forEach((p, j) => { p.hp = keep[j]; }); for (const x of stands) x.hp = x.hp || 1; };
+  const trial = r => {
+    const was = slot(r); let lost = 0;
+    for (let i = 0; i < 40; i++) {
+      mend();
+      r.st = 'ready'; r.slot = was[0]; r.n = was[1];
+      const q = IC.parkPos(S, mb, r); IC.aptHit(S, mb, q.x, q.y, 40);
+      if (r.st === 'lost') lost++;
+    }
+    r.st = 'ready'; r.slot = was[0]; r.n = was[1]; mend();
+    return lost / 40;
+  };
+  const pOpen = trial(open), pShel = trial(shel);
+  assert(pOpen > 0.6 && pShel < 0.3, `lost in the open ${pOpen}, in a shelter ${pShel}`);
+  let said = null; IC.on((S2, type, d) => { if (S2 === S && type === 'groundLoss') said = d; });
+  S.strike = null;
+  for (let i = 0; i < 10 && open.st !== 'lost'; i++) { const q = IC.parkPos(S, mb, open); IC.aptHit(S, mb, q.x, q.y, 40); }
+  IC.emit(S, 'raidOver', {});
+  assert(said && said.base === mb && said.n >= 1, `she said nothing of the jets lost on the ground (${open.st}, ${JSON.stringify(S.strike && S.strike.hurt)}, war ${S.enemy.war})`);
+  mend(); S.roster = S.roster.filter(r => !/^TEST (OPEN|SHELTER)/.test(r.name)); IC.assignSlots(S, mb);
+}, true, 'warplan');
 test('war planner: the exported file reads back as the same plan, and a wave made in the planner flies at once', () => {
   const S = wpGame(), X = S.wp;
   const text = IC.wpFileText(X.plan, 'homeland'), P = IC.wpParse(text);
@@ -8931,7 +8994,8 @@ test('map: the Career\'s war plan stands on their soil, fires at things that are
   const ids = new Set(Object.keys(S.wp.bats));
   for (const w of S.wp.waves) for (const h of w.hits) {
     assert(ids.has(h.bat), `wave ${w.id} fires from ${h.bat}, which is not in the plan`);
-    if (!/^(ad|apt|set):/.test(h.at)) assert(IC.wpTarget(S, h.at, S.wp.bats[h.bat]), `wave ${w.id} fires at ${h.at}, which is not on the map`);
+    // (the base a strike flew from exists once one has flown; until then its fallback is the main base)
+    if (!/^(ad|apt|set):|^base:strike$/.test(h.at)) assert(IC.wpTarget(S, h.at, S.wp.bats[h.bat]), `wave ${w.id} fires at ${h.at}, which is not on the map`);
   }
   // their batteries lie in more than one sector, so the strike table has a choice
   assert(IC.strikeSectors(S).length >= 3, `their batteries are in ${IC.strikeSectors(S).length} sectors`);

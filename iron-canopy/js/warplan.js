@@ -116,6 +116,12 @@ IC.wpTarget = function (S, at, from) {
   if (k === 'city') return tgt(IC.cities(S).find(c => c.name === v));
   if (k === 'place') { const p = IC.placeOf(S, v); if (!p) return null; return p._ref && p._ref.x != null && !p._ref.abroad ? tgt(p._ref) : { x: p.x, y: p.y, ref: null, name: p.name, set: 'city' }; }
   if (k === 'infra') return tgt(S.byId[v] || S.infra.find(x => x.name === v));
+  if (k === 'base' && v === 'strike') {
+    // (brief 79) the base our last strike flew from: they watched the jets take off, and aim where they park
+    const b = S.strike && S.strike.from && S.byId[S.strike.from];
+    if (!b || b.owner !== 'us' || b.offline) return null;
+    return Object.assign(tgt(b, 'airbase'), { pts: IC.wpParkAims(S, b) });
+  }
   if (k === 'base') return tgt(IC.mainBase(S), 'airbase');
   if (k === 'command') { const c = IC.cap(S); return c ? tgt(c, 'command', `the government quarter of ${c.name}`) : null; }
   if (k === 'apt') {
@@ -142,11 +148,18 @@ IC.wpTarget = function (S, at, from) {
   }
   return null;
 };
+/* where our jets stand at a base, for a strike on it: each flight's place twice, the shelters, fuel and ammunition once */
+IC.wpParkAims = function (S, b) {
+  const P = [];
+  for (const r of S.roster) if (r.base === b.id && r.st !== 'lost') { const q = IC.parkPos(S, b, r); P.push({ x: q.x, y: q.y }, { x: q.x, y: q.y }); }
+  for (const p of b.parts || []) if (p.built && p.hp > p.max * 0.25 && ['has', 'alert', 'hangar', 'fuel', 'ammo'].includes(p.kind)) P.push({ x: p.x, y: p.y });
+  return P;
+};
 /* the words a target spec reads as, for the planner and the Intel room */
 IC.wpTargetWords = function (at) {
   if (Array.isArray(at)) return `a point at ${Math.round(at[0])}, ${Math.round(at[1])}`;
   const i = (at || '').indexOf(':'), k = at.slice(0, i), v = at.slice(i + 1);
-  return { city: `the city of ${v}`, place: `the place "${v}"`, infra: v, base: 'our main air base', command: 'the government quarter',
+  return { city: `the city of ${v}`, place: `the place "${v}"`, infra: v, base: v === 'strike' ? 'the base our last strike flew from' : 'our main air base', command: 'the government quarter',
     apt: { busiest: 'our busiest airport', capital: "the capital's airport", north: 'our airport nearest the border', nearest: 'our nearest airport' }[v] || 'an airport',
     ad: { radar: 'a radar they know of', sam: 'a missile battery they know of', busiest: 'the battery that has fired most' }[v] || 'our air defence',
     set: IC.ESETS[v] ? IC.ESETS[v].name : v }[k] || at;
@@ -217,7 +230,7 @@ IC.wpCalm = function (S, E) {
 };
 
 /* a target that is not there falls back to one of the same kind, then the main air base */
-const FALLBACK = { ad: ['ad:any', 'base:main'], apt: ['apt:busiest', 'set:trade', 'base:main'], set: ['base:main'], infra: ['base:main'], place: ['base:main'], city: ['set:city'] };
+const FALLBACK = { base: ['base:main'], ad: ['ad:any', 'base:main'], apt: ['apt:busiest', 'set:trade', 'base:main'], set: ['base:main'], infra: ['base:main'], place: ['base:main'], city: ['set:city'] };
 function planWave(S, E, X, w, T, R) {
   const K = IC.EK, plan = [], skipped = [];
   if (w.act && E.act < w.act) for (let n = E.act + 1; n <= w.act; n++) K.startAct(S, n, w.actWhy || `the plan's ${w.name || 'next wave'}`);

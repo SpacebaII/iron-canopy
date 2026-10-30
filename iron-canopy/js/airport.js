@@ -1118,7 +1118,7 @@ IC.parkPos = function (S, b, r) {
 IC.aptHit = IC.baseHit = function (S, ap, x, y, dmg, src) {
   const rb = 0.3 + dmg * 0.006, p = { x, y };
   const hitNames = [], notes = [], hitRw = [];
-  let acLost = 0, sheltered = 0;
+  let acLost = 0, sheltered = 0, milLost = 0;
   for (const part of ap.parts) {
     if (!part.built && part.prog <= 0) continue;
     if (part.kind === 'runway') {
@@ -1173,7 +1173,7 @@ IC.aptHit = IC.baseHit = function (S, ap, x, y, dmg, src) {
     const shel = pp.fac;
     const chance = shel ? (shel.kind === 'has' ? (shel.hp > shel.max * 0.25 ? 0.1 : 0.6) : shel.kind === 'alert' ? 0.45 : (shel.hp > shel.max * 0.25 ? 0.4 : 0.9)) : 0.8;
     if (Math.random() >= chance) { if (shel && chance < 0.8) sheltered++; }
-    else { r.st = 'lost'; r.ent = null; acLost++; S.stats.acLost++; S.wrecks.push({ x: pp.x, y: pp.y, type: 'aircraft', t: S.time, h: pp.a || 0 }); IC.addFire(S, pp.x, pp.y, 0.6, 2400); }
+    else { r.st = 'lost'; r.ent = null; acLost++; milLost += r.n || 1; S.stats.acLost++; S.wrecks.push({ x: pp.x, y: pp.y, type: 'aircraft', t: S.time, h: pp.a || 0 }); IC.addFire(S, pp.x, pp.y, 0.6, 2400); }
   }
   for (const m of ap.moves) if (!m.dead && !m.destroyed && U.dist(m, p) < rb + m.T.span / 2) { m.destroyed = true; acLost++; S.wrecks.push({ x: m.x, y: m.y, type: m.T.mil ? 'aircraft' : 'airliner', t: S.time, h: m.h }); IC.addFire(S, m.x, m.y, 0.8, 3000); }
   // airliners parked at their stands
@@ -1192,7 +1192,7 @@ IC.aptHit = IC.baseHit = function (S, ap, x, y, dmg, src) {
   const uniq = [...new Set(hitNames)];
   const head = [uniq.join(', '), acLost ? `${acLost} aircraft destroyed on the ground` : '', !st.runway ? 'RUNWAY CLOSED' : ''].filter(Boolean).join('; ');
   if (uniq.length || acLost || notes.length) IC.log(S, 'leak', 'AIRPORT', `${ap.name}: ${head ? head + '.' : 'hit.'}${notes.length ? ' ' + notes.join(' ') : ''}`, { x, y });
-  IC.emit(S, 'baseHit', { base: ap, acLost, runway: st.runway, notes, sheltered });
+  IC.emit(S, 'baseHit', { base: ap, acLost, milLost, runway: st.runway, notes, sheltered });
   if (ap.autoRepair) autoQueue(S, ap);
 };
 /* what the pavement made of the hole (brief 25): reinforced concrete halves it, age widens it */

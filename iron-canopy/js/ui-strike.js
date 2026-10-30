@@ -7,7 +7,7 @@
 const U = IC.U;
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const pct = v => `${Math.round(v * 100)}%`;
-const T = IC.strikeUI = { sec: null, grp: null, msg: '', insist: -1 };
+const T = IC.strikeUI = { sec: null, grp: null, msg: '', insist: -1, to: null };
 
 // the compass, row by row: the eight sectors round our capital
 const GRID = [['NW', 'N', 'NE'], ['W', null, 'E'], ['SW', 'S', 'SE']];
@@ -45,7 +45,7 @@ IC.strikePage = function (S) {
       return `<div class="sk-pkg${rec ? ' rec' : ''}${p.ok ? '' : ' no'}"><h4>${esc(o.pkg.name)}${rec ? '<em>her advice</em>' : ''}</h4>
         <dl class="kv"><dt>Aircraft</dt><dd>${o.all} (${o.jets} with bombs)</dd><dt>Each one lost</dt><dd>${pct(o.loss)}</dd><dt>Expected lost</dt><dd>${o.lossJets.toFixed(1)}</dd><dt>Launchers destroyed</dt><dd>about ${o.kills.toFixed(1)} of ${o.n}</dd></dl>
         ${p.ok || !p.enough ? '' : `<p class="hint">${esc(p.why)}: she would not send it.</p>`}${go}</div>`;
-    }).join('')}</div><p class="hint">Their air defence covering the target: ${t.pk[0].o.D.sam} launchers · their fighters within reach: ${t.pk[0].o.D.ftr}. An escort halves the danger from fighters; radar hunters halve it from their air defence. A jet destroys a launcher we have located ${pct(IC.STRIKE.kill)} of the time, one it has to hunt for ${pct(IC.STRIKE.blind)}.</p>`;
+    }).join('')}</div>${homeCard(t)}<p class="hint">Their air defence covering the target: ${t.pk[0].o.D.sam} launchers · their fighters within reach: ${t.pk[0].o.D.ftr}. An escort halves the danger from fighters; radar hunters halve it from their air defence. A jet destroys a launcher we have located ${pct(IC.STRIKE.kill)} of the time, one it has to hunt for ${pct(IC.STRIKE.blind)}.</p>`;
   }
   const X = S.strike || { cur: [], log: [] };
   const cur = X.cur.map(st => `<div class="li"><b>In the air: the ${esc(IC.wpSectorWord(st.sec))}</b><small>${st.out.map(f => esc(f.name)).join(', ')} · ${st.arrived} of ${st.out.length} flights over the target</small><span class="la">${st.out.map(f => `<button class="btn sm" data-act="strk" data-v="show:${f.id}">${esc(f.name)}</button>`).join('')}</span></div>`).join('');
@@ -55,14 +55,25 @@ IC.strikePage = function (S) {
     ${cur ? `<div class="card wide"><h3>Strikes in the air</h3><div class="list">${cur}</div></div>` : ''}
     <div class="card wide"><h3>Strike reports</h3>${log ? `<div class="list">${log}</div>` : '<p class="hint">No strikes yet. Destroyed launchers do not fire in their next raid; they answer strikes on their soil with a retaliation strike.</p>'}</div>`;
 };
+/* (brief 79) where the jets land afterwards, and what waits for them at home */
+function homeCard(t) {
+  if (!t.home) return '';
+  if (T.to && !t.away.some(b => b.id === T.to)) T.to = null;
+  const pick = (id, label) => `<button class="btn sm" data-act="strk" data-v="to:${id || ''}" aria-pressed="${(T.to || '') === (id || '')}">${esc(label)}</button>`;
+  const risk = { high: 'Exposed', some: 'Partly protected', low: 'Protected' }[t.guard.risk];
+  return `<div class="sk-home sk-${t.guard.risk}"><h4>After the strike <em>${esc(t.home.name)}: ${risk}</em></h4>
+    <p>${esc(t.base.trim())}</p>
+    <div class="sk-kinds">${pick(null, `Come home to ${t.home.name}`)}${t.away.map(b => pick(b.id, `Land at ${b.name}`)).join('')}</div></div>`;
+}
 IC.strikeAct = function (S, v) {
   const [k, a] = String(v).split(':');
   T.msg = '';
   if (k === 'sec') { T.sec = a; T.grp = null; T.insist = -1; }
+  else if (k === 'to') T.to = a || null;
   else if (k === 'grp') { T.grp = a; T.insist = -1; }
   else if (k === 'insist') { T.insist = +a; T.msg = 'If you order that, I will fly it. But I want it written down that I advised against it.'; }
   else if (k === 'go' || k === 'force') {
-    const r = IC.strikeOrder(S, T.sec, T.grp, +a, k === 'force');
+    const r = IC.strikeOrder(S, T.sec, T.grp, +a, k === 'force', T.to);
     T.insist = -1;
     if (!r.ok) T.msg = r.why;
     else { T.msg = `They are on their way. Watch them cross the border.`; IC.sfx && IC.sfx.ui('ok'); }

@@ -399,6 +399,9 @@ function land(S, a, base) {
   r.base = base.id;
   r.st = 'turn';
   r.t = K.turn * (base.parts ? IC.baseStatus(S, base).turn : 1) * (r.n < (r.nMax || K.n) ? 1.3 : 1);
+  // (brief 79) back from a strike across the border: bombs loaded again and every jet inspected, twice as long; at a
+  // field that is not an air base the bombs come by lorry, half as long again
+  if (a.mission && a.mission.type === 'xstrike') r.t *= 2 * (base.kind === 'airbase' ? 1 : 1.5);
   if (base.parts) { IC.assignSlots(S, base); if (base.parts && !IC.ACTYPES[IC.AIRKIND_TYPE[a.kind]].vtol) IC.aptTakeFuel(base, IC.ACTYPES[IC.AIRKIND_TYPE[a.kind]].fuel * (r.n || 1)); }
   IC.emit(S, 'landed', a);
 }
