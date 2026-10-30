@@ -901,7 +901,13 @@ const alongR = (pts, cum, s) => {
 };
 IC.alongR = alongR;
 IC.trainPos = t => alongR(t.r.pts, t.r.cum, U.clamp(t.s, 0, t.r.len));
-IC.busPos = b => { const p = alongR(b.line.pts, b.line.cum, U.clamp(b.s, 0, b.line.len)); if (b.dir < 0) p.h += Math.PI; return p; };
+/* (round 8) a bus is laid along its line between its two axles, 4 m either side, so it turns through a corner instead of
+   snapping round at it */
+IC.busPos = b => {
+  const P = b.line.pts, c = b.line.cum, Lb = b.line.len, p = alongR(P, c, U.clamp(b.s, 0, Lb)), a = alongR(P, c, U.clamp(b.s - 0.04, 0, Lb)), f = alongR(P, c, U.clamp(b.s + 0.04, 0, Lb));
+  const dx = f.x - a.x, dy = f.y - a.y; if (dx * dx + dy * dy > 1e-8) { p.x = (a.x + f.x) / 2; p.y = (a.y + f.y) / 2; p.h = Math.atan2(dy, dx); }
+  if (b.dir < 0) p.h += Math.PI; return p;
+};
 
 /* ---------- how many vehicles are drawn ----------
    Every way of drawing road traffic (the slots of the middle zoom, the vehicles on their own trips close in, the 3D
@@ -939,6 +945,8 @@ function pickKind(mix, h) {
   for (const [k, q] of M) { if (r < q) return k; r -= q; }
   return M[0][0];
 }
+/* the angle a of the way from a to b (f 0 → 1), the short way round */
+const angMix = (a, b, f) => { let d = b - a; d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI; return a + d * f; };
 IC.trafficVisible = function (S, view, gap, fn, skip) {
   const T = S.traffic; if (!T) return 0;
   const G = T.G, o = typeof gap === 'object' ? gap : null, keep0 = o ? o.keep : Math.min(1, BASE / Math.max(BASE, gap)), W = o && o.cls;
@@ -991,7 +999,10 @@ IC.trafficVisible = function (S, view, gap, fn, skip) {
         while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] < sv) lo = mid + 1; else hi = mid; }
         const pa = P[lo - 1], pb = P[lo], t = (sv - cum[lo - 1]) / ((cum[lo] - cum[lo - 1]) || 1), qx = pa.x + (pb.x - pa.x) * t, qy = pa.y + (pb.y - pa.y) * t;
         if (qx < view.x0 || qx > view.x1 || qy < view.y0 || qy > view.y1) continue;
-        const hd = l.hd || (l.hd = headings(P)), qh = hd[lo - 1];
+        // (near a bend in the road's line the heading eases from one piece's to the next over 5 m, so a vehicle and its
+        // lane turn through the bend instead of snapping round at it)
+        const hd = l.hd || (l.hd = headings(P)), e0 = sv - cum[lo - 1], e1 = cum[lo] - sv;
+        const qh = e0 < 0.05 && lo > 1 ? angMix(hd[lo - 2], hd[lo - 1], 0.5 + e0 * 10) : e1 < 0.05 && lo < hd.length ? angMix(hd[lo - 1], hd[lo], 0.5 - e1 * 10) : hd[lo - 1];
         const kind = pickKind(mixOf(L, d), h / p), lane = lanes > 1 ? (KINDS[kind].L > 0.1 || U.hash(j, L.key) < 0.55 ? 0 : 1) : 0;
         fn(qx, qy, d ? qh + Math.PI : qh, kind, L.cls, L.C.off[lane]);
         n++;

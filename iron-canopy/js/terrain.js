@@ -306,7 +306,8 @@ function airfields(g, S, x0, y0, x1, y1, lod) {
     g.strokeStyle = g.fillStyle = 'rgba(104,122,72,0.5)'; g.lineCap = 'round'; g.lineJoin = 'round';
     for (const p of paved) {
       if (p.kind === 'taxi') { g.lineWidth = (p.w || 0.23) + 0.8; g.beginPath(); p.nodes.forEach((id, i) => { const n = ap.nodes[id]; if (n) i ? g.lineTo(n.x, n.y) : g.moveTo(n.x, n.y); }); g.stroke(); }
-      else if (p.kind !== 'runway' && IC.partOutline) { const P = IC.partOutline(p); g.lineWidth = 0.8; poly(P); g.fill(); g.stroke(); }
+      // (round 8: round an apron the mown band keeps its straight sides and corners, mitred, instead of swelling)
+      else if (p.kind !== 'runway' && IC.partOutline) { const P = IC.partOutline(p); g.lineWidth = 0.8; g.lineJoin = 'miter'; g.miterLimit = 2; poly(P); g.fill(); g.stroke(); g.lineJoin = 'round'; }
     }
     // the graded strip: 150 m either side of the runway and 60 m beyond its ends, kept short
     for (const p of paved) if (p.kind === 'runway') {

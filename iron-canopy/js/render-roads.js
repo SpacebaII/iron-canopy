@@ -680,7 +680,10 @@ IC.drawTraffic = function (g, S, px, v, light, now) {
   const tl = Math.max(0.25, 5 * px);
   for (const t of S.trains) {
     for (let k = 0; k < t.cars; k++) {
-      const p = IC.trainPos({ r: t.r, s: t.s - t.dir * k * tl * 1.1 });
+      // (round 8) each carriage lies between its two bogies on the line, so the train bends through a curve carriage by
+      // carriage instead of each one snapping to the piece of line under its middle
+      const s0 = t.s - t.dir * k * tl * 1.1, f = IC.trainPos({ r: t.r, s: s0 + t.dir * tl * 0.4 }), b = IC.trainPos({ r: t.r, s: s0 - t.dir * tl * 0.4 });
+      const p = { x: (f.x + b.x) / 2, y: (f.y + b.y) / 2, h: Math.atan2(f.y - b.y, f.x - b.x) };
       if (!inView(p.x, p.y, 10)) continue;
       ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.h);
       const tw = Math.max(0.032, 2 * px);   // a carriage is about 3 m wide

@@ -9,7 +9,7 @@
 'use strict';
 const U = IC.U;
 const ramp = (x, a, b) => U.clamp((x - a) / (b - a), 0, 1);
-const P = { x: 0, y: 0, h: 0, moving: false, work: 0 }, Q = { x: 0, y: 0, h: 0 };
+const P = { x: 0, y: 0, h: 0, moving: false, work: 0 }, Q = { x: 0, y: 0, h: 0 }, Q2 = { x: 0, y: 0, h: 0 };
 
 /* vehicles from above, front along +x: length and width in world units, body colour, a second colour, the form */
 const VEH = {
@@ -182,11 +182,14 @@ IC.drawLandLife = function (g, S, ap, px, z, night, LT, lights) {
     // the lane by the terminal is for the cars that pull in, stand while their passengers get out, and go on
     const dirs = r.oneway ? [r.oneway] : [1, -1], thru = r.oneway ? Math.max(1, lanes - (r.kerb ? 1 : 0)) : 1;
     const nKerb = r.kerb ? Math.round(N * 0.4) : 0, nLane = Math.max(0, Math.round((N - nKerb) / (dirs.length * thru)));
-    const car = (s, dir, o, stop, i) => {
+    // (the heading is the road's over 6 m either side, so a car turns through the bends of the loop instead of snapping
+    // round at each point of it; tilt is how far it turns off that to change lane, for one pulling in to the kerb)
+    const car = (s, dir, o, stop, i, tilt) => {
       if (dir < 0) s = LL - s;
-      at(r, cum, s, Q);
+      at(r, cum, Math.max(0, s - 0.06), Q2); const ax = Q2.x, ay = Q2.y; at(r, cum, Math.min(LL, s + 0.06), Q2);
+      at(r, cum, s, Q); const rh = Math.atan2(Q2.y - ay, Q2.x - ax);
       const fade = U.clamp(Math.min(s, LL - s) / 0.12, 0, 1); if (fade <= 0.02) return;
-      const hd = Q.h + (dir < 0 ? Math.PI : 0), x = Q.x - Math.sin(Q.h) * o, y = Q.y + Math.cos(Q.h) * o;
+      const hd = rh + (dir < 0 ? Math.PI : 0) + (tilt || 0), x = Q.x - Math.sin(rh) * o, y = Q.y + Math.cos(rh) * o;
       const h2 = U.hash(i, 29), taxi = U.hash(i, 5) < 0.22, bus = !r.kerb && U.hash(i, 41) > 0.95;
       const len = bus ? 0.12 : 0.045, wd = bus ? 0.026 : 0.019;
       g.save(); g.translate(x, y); g.rotate(hd); g.globalAlpha = fade;
@@ -222,7 +225,11 @@ IC.drawLandLife = function (g, S, ap, px, z, night, LT, lights) {
       const dwell = 30 + 60 * h2, sStop = 0.15 + (LL - 0.3) * (i + 0.5) / nKerb, per = LL / v + dwell, u = (LT + h1 * per * 7) % per;
       let s, stop = false;
       if (u < sStop / v) s = u * v; else if (u < sStop / v + dwell) { s = sStop; stop = true; } else s = (u - dwell) * v;
-      car(s, r.oneway || 1, (r.w / 2 - lw / 2) * r._sd, stop, 500 + i);
+      // (round 8) it drives in the next lane out and pulls in to the kerb over the last 15 m, out again after, so the cars
+      // going on pass the ones standing instead of driving through them
+      const oK = (r.w / 2 - lw / 2) * r._sd, oT = lanes > 1 ? oK - lw * r._sd : oK, e = Math.abs(s - sStop), f = U.clamp(1 - e / 0.15, 0, 1);
+      const sm = f * f * (3 - 2 * f), df = e < 0.15 ? 6 * f * (1 - f) / 0.15 * (s < sStop ? 1 : -1) : 0, dir = r.oneway || 1;
+      car(s, dir, oT + (oK - oT) * sm, stop, 500 + i, dir * Math.atan((oK - oT) * df));
     }
     // passengers at the kerb: waiting with their bags, walking in through the doors
     if (r.kerb && z > 28 && !lights) {

@@ -1208,6 +1208,25 @@ test('traffic: close in, vehicles pull away and brake smoothly, slow before junc
   assert(straight > 200 && straightV / straight > turnV / near + 0.1, `straight on through a junction (${(straightV / Math.max(1, straight)).toFixed(2)} of the limit) is not faster than turning (${(turnV / near).toFixed(2)})`);
   assert(seenIn.size > 50 && seenOut.size > 5, `${seenIn.size} vehicles faded in as they pulled out, ${seenOut.size} out as they parked`);
 });
+test('motion: buses turn through corners, and airside vehicles pull away and stop gently (round 8)', () => {
+  const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
+  // a bus's heading changes a little at a time along its whole line, not a quarter turn at a corner
+  let n = 0, snap = 0;
+  for (const b of S.buses.slice(0, 20)) {
+    const L = b.line.len, o = { line: b.line, dir: 1, s: 0 };
+    let h0 = null;
+    for (let s = 0.05; s < L - 0.05; s += 0.01) { o.s = s; const h = IC.busPos(o).h; if (h0 != null) { n++; let d = Math.abs(h - h0) % (2 * Math.PI); if (d > Math.PI) d = 2 * Math.PI - d; if (d > 0.4) snap++; } h0 = h; }
+  }
+  assert(n > 1000 && snap < n * 0.002, `${snap} of ${n} metres along the bus lines turned more than 23°`);
+  // a service vehicle drives in at its speed in the middle of the way, slower as it pulls away and comes to a stop
+  const path = { pts: [{ x: 0, y: 0 }, { x: 1, y: 0 }], cum: [0, 1], len: 1 }, job = { ta: 1000, td: 2000, lag: 0 }, V = IC.LIFE.drive, dT = 1 / V, o = {};
+  const at = t => (IC.turnVehAt(job, path, t, o), o.x);
+  const e = 0.01 * dT, v = t => (at(t + e) - at(t - e)) / (2 * e);
+  // (2 m from the start and 2 m short of the aircraft)
+  assert(v(job.ta - dT + 0.02 / V) < V * 0.7 && v(job.ta - 0.02 / V) < V * 0.7, 'a vehicle starts or stops at full speed');
+  assert(v(job.ta - dT / 2) >= V * 0.99, 'a vehicle crawls in the middle of its way');
+  assert(Math.abs(at(job.ta) - 1) < 1e-6 && Math.abs(at(job.ta - dT) - 0) < 1e-6, 'a vehicle does not take its usual time');
+});
 test('traffic: a cut road makes a visible queue, and close-in traffic turns back from it', () => {
   const S = IC.newGame({ seed: 4242, mode: 'sandbox', hour: 8 });
   const T = S.traffic, G = T.G;

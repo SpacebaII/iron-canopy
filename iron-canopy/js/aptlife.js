@@ -114,11 +114,15 @@ IC.turnVehAt = function (job, path, t, out) {
   if (!path) return false;
   const Lg = path.len, dT = Lg / IC.LIFE.drive, off = job.lag * 0.036;
   if (t < job.ta - dT || t > job.td + dT) return false;
+  // (round 8) it pulls away and slows to a stop over its first and last 8 m or so, not at full speed on the spot: the
+  // same time on the way, a little faster in between
+  const r = Math.min(0.3, 0.08 / Math.max(0.01, Lg)), vm = 1 / (1 - r);
+  const trap = p => p < r ? 0.5 * vm * p * p / r : p < 1 - r ? vm * (p - r / 2) : 1 - 0.5 * vm * (1 - p) * (1 - p) / r;
   let d, rev = false;
-  if (t < job.ta) d = (t - (job.ta - dT)) * IC.LIFE.drive; else if (t <= job.td) d = Lg; else { d = Lg - (t - job.td) * IC.LIFE.drive; rev = true; }
+  if (t < job.ta) d = Lg * trap(U.clamp((t - (job.ta - dT)) / dT, 0, 1)); else if (t <= job.td) d = Lg; else { d = Lg - Lg * trap(U.clamp((t - job.td) / dT, 0, 1)); rev = true; }
   along(path, Math.max(0, d - off), out);
   // leaving, it turns round as it pulls away (a U-turn over its first 8 m), not on the spot
-  if (rev) { const f = U.clamp((t - job.td) * IC.LIFE.drive / 0.08, 0, 1); out.h += Math.PI * f * f * (3 - 2 * f); }
+  if (rev) { const f = U.clamp((Lg - d) / 0.08, 0, 1); out.h += Math.PI * f * f * (3 - 2 * f); }
   out.moving = t < job.ta || t > job.td;
   out.work = out.moving ? 0 : U.clamp((t - job.ta) / Math.max(1, job.td - job.ta), 0, 1);
   return true;
