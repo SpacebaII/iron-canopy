@@ -336,6 +336,7 @@
  "academy fixes: Jamming waits for the second radar, Layered Defence shows its 15 km, the hints name a tile": 15.8,
  "academy fixes: the damage step only says the engineers started on a runway that was hit": 6.2,
  "aircraft variety: every aircraft type has a model at its real size, low enough in triangles": 0.5,
+ "models: every family of missile has a shape of its own, and ours and theirs are told apart by their paint": 0.3,
  "launchers (brief 61): every launcher, radar and missile is built at its size, with its moving parts, low enough in triangles": 0.1,
  "models: vehicles, launchers and sites have chamfered edges close in, plain boxes far out, and stay light": 0.1,
  "aircraft variety: general aviation fills a light-aircraft field over a day": 16.7,

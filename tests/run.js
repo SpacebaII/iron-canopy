@@ -6167,6 +6167,42 @@ test('launchers (brief 61): every launcher, radar and missile is built at its si
     assert(me.tris < 6000 && far.tris < me.tris * 0.7, `${k}: ${me.tris} triangles close, ${far.tris} far`);
   }
 });
+test('models: every family of missile has a shape of its own, and ours and theirs are told apart by their paint', () => {
+  // how light a model's paint is, by the area of its surface in each colour
+  const lum = k => {
+    const me = IC.modelMesh(k, 1); let s = 0, n = 0;
+    for (const g of Object.values(me.groups)) for (let i = 0; i < g.col.length; i += 3) {
+      const c = me.slots[g.col[i]]; if (c[0] !== '#') continue;
+      const P = g.pos, j = i * 3, u = [P[j + 3] - P[j], P[j + 4] - P[j + 1], P[j + 5] - P[j + 2]], w = [P[j + 6] - P[j], P[j + 7] - P[j + 1], P[j + 8] - P[j + 2]];
+      const a = Math.hypot(u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]), v = parseInt(c.slice(1), 16);
+      s += a * (0.3 * (v >> 16) + 0.59 * ((v >> 8) & 255) + 0.11 * (v & 255)) / 255; n += a;
+    }
+    return s / n;
+  };
+  const fam = { IR: 'ir', IR2: 'ir', SR: 'sr', MR: 'mr', LR: 'lr', LRE: 'lre', VLR: 'vlr', TBD: 'tbd', HAT: 'hat', EXO: 'exo', AAM: 'aam', INT: 'int', CRS: 'crs', SRB: 'srb', RKT: 'rkt' };
+  const byFam = new Map();
+  for (const k in fam) {
+    assert(IC.MUN[k], `no munition ${k}`);
+    const m = IC.modelOfMissile({ mun: k }), d = IC.MODELS[m];
+    assert(d, `our ${k} has no model`);
+    assert(!byFam.has(m) || byFam.get(m) === fam[k], `${k} looks the same as another family (${m})`);
+    byFam.set(m, fam[k]);
+    const me = IC.modelMesh(m, 1); let x0 = 1e9, x1 = -1e9; for (const g of Object.values(me.groups)) for (let i = 0; i < g.pos.length; i += 3) { x0 = Math.min(x0, g.pos[i]); x1 = Math.max(x1, g.pos[i]); }
+    assert(Math.abs((x1 - x0) - d.len) / d.len < 0.2, `${m}: built ${(x1 - x0).toFixed(1)} m long, meant to be ${d.len} m`);
+    if (IC.MUN[k].seeker && k !== 'INT') assert(lum(m) > 0.6, `our ${k} is not painted white (${lum(m).toFixed(2)})`);
+  }
+  for (const k in IC.MUN) if (IC.MUN[k].seeker || IC.MUN[k].strike) assert(IC.MODELS[IC.modelOfMissile({ mun: k })], `our ${k} has no model`);
+  // their weapons: each kind its own outline, all in darker paint than our interceptors
+  const theirs = ['owa', 'jdr', 'lm', 'lacm', 'mcm', 'scm', 'glb', 'srbm', 'marv', 'mrbm', 'pen', 'hgv', 'rkt', 'arm', 'dcy'];
+  const seen = new Map();
+  for (const k of theirs) {
+    const m = IC.modelOfThreat({ type: k, d: IC.THR[k], aff: 'H' }, true);
+    assert(!seen.has(m), `${k} looks the same as ${seen.get(m)} (${m})`); seen.set(m, k);
+    assert(lum(m) < 0.5, `their ${k} is painted as light as ours (${lum(m).toFixed(2)})`);
+  }
+  assert(IC.modelOfStrike({ side: 'us', mun: 'CRS' }) !== IC.modelOfStrike({ side: 'H', mun: 'CRS' }), 'our cruise missile is drawn as theirs');
+  assert(IC.modelOfAam({ ir: true }) !== IC.modelOfMissile({ mun: 'AAM' }), 'their fighters fire our missiles');
+});
 test('models: vehicles, launchers and sites have chamfered edges close in, plain boxes far out, and stay light', () => {
   // a chamfer is a face whose normal leans between two axes: a lorry has them close in and none at the far level
   const leaning = me => { let n = 0; for (const k in me.groups) { const N = me.groups[k].nor; for (let i = 0; i < N.length; i += 9) { const a = [Math.abs(N[i]), Math.abs(N[i + 1]), Math.abs(N[i + 2])].sort((x, y) => y - x); if (a[1] > 0.6 && a[0] < 0.8) n++; } } return n; };

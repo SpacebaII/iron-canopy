@@ -447,7 +447,7 @@ function sampleMissile(S, R, m, now, enemy) {
   let tr = R.of.get(m);
   if (!tr) {
     const by = m.unit || m.by || (m.src && typeof m.src === 'object' ? m.src : null);
-    tr = enemy ? newTrack(R, m, 'missile', m.ir ? 'aam' : 'aam', m.ir ? 'Heat-seeking missile' : 'Radar air-to-air missile', 'enemy', { mun: m.ir ? 'SRM' : 'MRM', tref: m.target, uref: by, seeker: m.ir ? 'IR' : 'ARH' })
+    tr = enemy ? newTrack(R, m, 'missile', IC.modelOfAam(m), m.ir ? 'Heat-seeking missile' : 'Radar air-to-air missile', 'enemy', { mun: m.ir ? 'SRM' : 'MRM', tref: m.target, uref: by, seeker: m.ir ? 'IR' : 'ARH' })
       : newTrack(R, m, 'missile', IC.modelOfMissile(m), `${m.mun} from ${m.src || 'a battery'}`, 'us', { mun: m.mun, tref: m.target, uref: by, seeker: m.M && m.M.seeker, name: m.M && m.M.name });
   }
   const ph = phaseOf(S, m, enemy), last = tr.n ? at(tr, tr.n - 1, 8) : 0;
@@ -495,7 +495,7 @@ IC.record = function (S, dt) {
   R.next = now + REC.dt;
   for (const t of S.threats) if (!t.dead && (R.of.get(t) || {}).t1 !== now) sampleThreat(S, R, t, now);
   if (!fine) { for (const m of S.missiles) if (!m.dead) sampleMissile(S, R, m, now, false); for (const m of S.eaam) if (!m.dead) sampleMissile(S, R, m, now, true); }
-  for (const s of S.strikes) { let tr = R.of.get(s); if (!tr) tr = newTrack(R, s, 'missile', s.mun === 'GBU' ? 'gbu' : 'cm', `${s.mun} from ${s.src || 'a launcher'}`, s.side === 'us' ? 'us' : 'enemy', { mun: s.mun }); push(tr, now, s.x, s.y, s.alt || 0, hdgOf(s, tr, lastH(tr)), s.spd || 0, 1, s.side === 'us' ? 1 : 4); tr.seen = now; }
+  for (const s of S.strikes) { let tr = R.of.get(s); if (!tr) tr = newTrack(R, s, 'missile', IC.modelOfStrike(s), `${s.mun} from ${s.src || 'a launcher'}`, s.side === 'us' ? 'us' : 'enemy', { mun: s.mun }); push(tr, now, s.x, s.y, s.alt || 0, hdgOf(s, tr, lastH(tr)), s.spd || 0, 1, s.side === 'us' ? 1 : 4); tr.seen = now; }
   for (const a of S.air) if (!a.dead && !a.gnd && (R.of.get(a) || {}).t1 !== now) sampleAir(R, a, now);
   for (const b of S.infra) if (b.parts && b.moves) for (const m of b.moves) if (!m.dead && m.phase !== 'start') sampleMove(R, m, b, now);
   if (now - R.turnT >= 2) { R.turnT = now; turnsTick(S, R, now); }
