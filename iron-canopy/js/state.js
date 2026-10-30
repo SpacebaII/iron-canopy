@@ -32,7 +32,7 @@ function* gameSteps(opts) {
   const sandbox = mode === 'sandbox';
   // the Career starts with no airports: the player builds the capital's. preset 'network' starts it with the
   // three ready-made airports instead (tests and quick checks of the airport systems use it)
-  const career = mode === 'story' && opts.preset !== 'network';
+  const career = mode === 'story' && opts.preset !== 'network' && opts.story !== 'v3';
   const S = {
     mode, seed, world: W, lesson: opts.lesson || null,
     time: (opts.hour != null ? opts.hour : 6) * 3600, speed: 1, paused: true, skip: false, slow: 0, over: null, won: false,
@@ -101,7 +101,7 @@ function* gameSteps(opts) {
   yield 'economy';
   IC.econInit(S);
   IC.airInit(S, sandbox, mode === 'academy', story);
-  if (mode === 'academy') IC.academyInit(S, opts.lesson); else if (story) IC.storyInit(S); else IC.campaignInit(S);
+  if (mode === 'academy') IC.academyInit(S, opts.lesson); else if (story) IC.storyInit(S, opts); else IC.campaignInit(S);
   // (wave 14) Free build: the Career's country with no story (free.js)
   if (story && opts.free) IC.freeInit(S);
   // (the showcase is the airport at work: no chapter cards, no goals, no guide)
@@ -128,6 +128,7 @@ IC.findSpot = function (S, type, x, y, dmin, dmax) {
   return null;
 };
 
+IC.startingForces = (S, sandbox) => startingForces(S, sandbox);
 function startingForces(S, sandbox) {
   const W = S.world, cap = IC.cap(S);
   const fA = W.fronts.find(f => f.key === 'A'), fB = W.fronts.find(f => f.key === 'B');

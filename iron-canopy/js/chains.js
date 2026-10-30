@@ -118,7 +118,7 @@ IC.CHAIN_PACE = { first: 300, gap: [360, 600], gameMin: 6 * 3600 };
 /* ---------- running the chains ---------- */
 const inPeace = S => S.story.act <= 3;
 IC.chainsTick = function (S, dt) {
-  const st = S.story; if (!st || !st.chains || S.mode !== 'story') return;
+  const st = S.story; if (!st || !st.chains || S.mode !== 'story' || st.v3) return;
   st.chT2 = (st.chT2 || 0) - dt; if (st.chT2 > 0) return;
   st.chT2 = 30;
   measure(S);
@@ -475,7 +475,7 @@ function paper(S, head, deck, text, more) {
 }
 IC.storyPaper = paper;
 IC.on((S, type, d) => {
-  const st = S.story; if (!st || !st.flags || S.mode !== 'story') return;
+  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || st.v3) return;
   const W = S.world, cap = capAp(S);
   if (type === 'collision' && d) st.collPlace = d.place;
   if (type === 'goal' && d && d.id === 'first' && cap) {
@@ -518,7 +518,7 @@ function warOpen(S) {
 }
 IC.H.castSay = (S, w, t) => () => IC.say(S, w, t);
 IC.on((S, type, d) => {
-  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || st.act !== 4) return;
+  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || st.v3 || st.act !== 4) return;
   const W = S.world;
   if (type === 'act' && d === 4) warOpen(S);
   // an airport hit: Okafor, and whether the fire crews were there (only what the player built can hurt her)
@@ -582,7 +582,7 @@ const KOLAR = {
 };
 function townName(S) { const t = borderTown(S); return t ? t.name : 'the border town'; }
 IC.on((S, type, d) => {
-  const st = S.story; if (!st || !st.flags || S.mode !== 'story') return;
+  const st = S.story; if (!st || !st.flags || S.mode !== 'story' || st.v3) return;
   const run = k => { for (const [dt, w, t] of IC.VOICES[k](S)) later(S, dt, w, t); };
   if (type === 'goal' && d && d.id === 'first') run('first');
   if (type === 'act' && d >= 2 && d <= 4) run('act' + d);
@@ -690,7 +690,7 @@ IC.endingOf = function (S) {
   if (town || f('okafor') === 'hurt' || f('mira') === 'lost') return 'endPrice';
   return open(S) ? 'endOpen' : 'endFortress';
 };
-IC.on((S, type) => { if (type === 'over' && S.story && S.story.flags && S.mode === 'story' && IC.cutscene) IC.cutscene(S, IC.endingOf(S), { again: true }); });
+IC.on((S, type) => { if (type === 'over' && S.story && S.story.flags && S.mode === 'story' && !S.story.v3 && IC.cutscene) IC.cutscene(S, IC.endingOf(S), { again: true }); });
 
 /* ---------- the reckoning ---------- */
 IC.storyThreads = function (S) {

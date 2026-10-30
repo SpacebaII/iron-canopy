@@ -98,7 +98,7 @@ function satAll(S, v) { for (const a of S.av ? S.av.airlines : []) a.sat = U.cla
 IC.STATEMENT && (IC.STATEMENT.agenda = 'The Ministry’s agenda');
 
 /* ---------- state ---------- */
-const on = S => S.mode === 'story' && S.story;
+const on = S => S.mode === 'story' && S.story && !S.story.v3;
 IC.agendaState = S => on(S) ? (S.story.agenda || (S.story.agenda = { done: new Set(), cur: null, closed: new Set() })) : null;
 const passed = S => { const A = on(S) && S.story.agenda; return A ? A.done : null; };
 IC.agendaDone = (S, id) => { const D = passed(S); return !!(D && D.has(id)); };

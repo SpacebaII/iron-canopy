@@ -397,7 +397,8 @@ function command(a, v) {
   const sel = S.sel && S.sel.ref;
   switch (a) {
     case 'emcon': { const us = selUnits().filter(u => u.emitter); if (!us.length) return; if (v) { for (const u of us) u.emcon = u.d.weapon === 'sam' || v !== 'ambush' ? v : 'off'; } else { const order = us[0].d.weapon === 'sam' ? ['on', 'ambush', 'off'] : ['on', 'off']; const nx = order[(order.indexOf(us[0].emcon) + 1) % order.length]; for (const u of us) u.emcon = u.d.weapon === 'sam' || nx !== 'ambush' ? nx : 'off'; } break; }
-    case 'uroe': for (const u of selUnits()) u.roe = v || ['auto', 'free', 'tight', 'hold'][(['auto', 'free', 'tight', 'hold'].indexOf(u.roe) + 1) % 4]; break;
+    case 'uroe': if (IC.sagaLock && IC.sagaLock(S, 'roe')) { IC.toast(S, 'warn', 'WEAPONS', IC.sagaLock(S, 'roe')); break; }
+      for (const u of selUnits()) u.roe = v || ['auto', 'free', 'tight', 'hold'][(['auto', 'free', 'tight', 'hold'].indexOf(u.roe) + 1) % 4]; break;
     case 'udoc': for (const u of selUnits()) if (u.d.weapon === 'sam') u.doctrine = v || ['auto', 'sls', 'salvo', 'conserve'][(['auto', 'sls', 'salvo', 'conserve'].indexOf(u.doctrine) + 1) % 4]; IC.emit(S, 'doctrine', v); break;
     case 'move': { const us = selUnits(); if (us.length === 1 && us[0].d.mob !== 'fixed') IC.setMode({ kind: 'move', unit: us[0] }); return; }
     case 'heli': for (const u of selUnits()) IC.heliResupply(S, u, true); break;
@@ -468,7 +469,12 @@ function onAct(e) {
     case 'finishNow': ui.waitPick = false; if (!IC.waitStart(S, 'works:' + v)) IC.toast(S, 'info', 'WORKS', 'Nothing is being built here.'); break;
     case 'skip': startSkip(); break;
     case 'mute': if (!IC.sfx.on) IC.sfx.init(); else IC.sfx.toggle(); break;
-    case 'roeAll': S.ad.roe = v; IC.log(S, 'info', 'WEAPONS', `National weapons status: ${v.toUpperCase()}.`); break;
+    case 'roeAll': {
+      const lock = IC.sagaLock && IC.sagaLock(S, 'roe'); if (lock) { IC.toast(S, 'warn', 'WEAPONS', lock); break; }
+      S.ad.roe = v;
+      // (story v3) the cell recommends; Gen. Voss follows by standing order
+      IC.log(S, 'info', 'WEAPONS', S.story && S.story.v3 ? `The cell recommends weapons ${v}. Voss: ${v === 'free' ? 'Free' : v === 'hold' ? 'Hold' : v}.` : `National weapons status: ${v.toUpperCase()}.`); break;
+    }
     case 'doctrine': S.ad.doctrine = v; IC.emit(S, 'doctrine', v); IC.log(S, 'info', 'DOCTRINE', `Firing doctrine: ${{ sls: 'shoot-look-shoot', salvo: 'salvo', conserve: 'conserve' }[v]}.`); break;
     case 'airspace':
       IC.airspaceSet(S, v);
@@ -544,6 +550,11 @@ function onAct(e) {
     case 'gapFix': { const g = IC.radarGap(S); if (locked('radar')) return; S.layers.gaps = true; ui.openRoom(null); IC.setMode({ kind: 'deploy', type: 'ssr' }); IC.emit(S, 'ui', { act: 'deploy', v: 'ssr' }); if (g) IC.flyTo(g.at.x, g.at.y, U.clamp(IC.cam.z, 0.05, 0.12)); return; }
     case 'aptOpen': ui.aptOpen = ui.aptOpen || {}; ui.aptOpen[v] = !ui.aptOpen[v]; break;
     case 'pmZoom': { const a = S.byId[v]; if (a) { IC.select({ kind: 'infra', ref: a }); IC.flyTo(a.x, a.y, Math.max(IC.cam.z, 6)); } return; }
+    // (story v3) the chapter's operation: ask the military for a task, go to a site, go on to the next chapter
+    case 'sagaAsk': IC.sagaAsk(S, +v); break;
+    case 'sagaShow': { const p = IC.sagaSite(S, v); if (!p) break; if (ui.room) ui.openRoom(null); ui.jump(p); if (p.ref) IC.select({ kind: 'infra', ref: p.ref }); return; }
+    case 'sagaGo': IC.sagaWait(S); break;
+    case 'sagaRead': if (IC.cutView) IC.cutView.tick(S); break;
     // (brief 69) the desk: go to a pressure, fix it, pay it off, or ask for more time
     case 'deskGo': case 'deskFix': {
       const P = S.story && S.story.desk && S.story.desk.P.find(x => x.id === v); if (!P) break;
@@ -984,6 +995,8 @@ async function build(seed, mode, lesson) {
   const o = mode === 'showcase' ? { seed, mode: 'story', preset: 'network', showcase: lesson, hour: 9 } : mode === 'build' ? { seed, mode: 'story', free: true, hour: 8 } : { seed, mode, lesson, hour: mode === 'academy' ? 10 : mode === 'story' ? 7 : 6 };
   // the Career and the Sandbox play on the hand-drawn map (brief 71); the Quick war and the Academy on a seed's region
   if ((mode === 'story' || mode === 'test') && IC.MAPS[IC.CAREER_MAP]) o.map = IC.CAREER_MAP;
+  // (story v3) the Career is Preston's story: the three airports are running when it opens (saga.js)
+  if (mode === 'story' && o.map && IC.CAREER_STORY) o.story = IC.CAREER_STORY;
   try { S2 = await IC.newGameAsync(o, (st, f) => { if (me === nth) IC.onLoadProgress(st, f); }); }
   finally { loading--; }
   if (me !== nth) return null;

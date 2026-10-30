@@ -37,10 +37,12 @@ IC.strikePage = function (S) {
     const t = IC.strikeTalk(S, T.sec, T.grp);
     say = T.msg || t.line;
     if (t.pk) talk = `<div class="sk-pkgs">${t.pk.map((p, i) => {
-      const o = p.o, rec = i === t.rec;
-      const go = p.ok ? `<button class="btn primary" data-act="strk" data-v="go:${i}">Order it</button>`
+      const o = p.o, rec = i === t.rec, v3 = !!(S.story && S.story.v3);
+      // (story v3) the cell recommends; Voss decides, and with the stage 7 restriction wants Okafor's word as well
+      const word = v3 ? 'Recommend it' : 'Order it';
+      const go = p.ok ? `<button class="btn primary" data-act="strk" data-v="go:${i}"${v3 && IC.sagaSigner ? ` title="${esc(IC.sagaSigner(S))}"` : ''}>${word}</button>`
         : !p.enough ? `<button class="btn" disabled>${esc(p.why)}</button>`
-        : t.canInsist ? `<button class="btn warn" data-act="strk" data-v="${T.insist === i ? 'force' : 'insist'}:${i}" title="She advises against it: her trust in you falls">${T.insist === i ? 'Yes, order it anyway' : 'Order it against her advice'}</button>`
+        : t.canInsist ? `<button class="btn warn" data-act="strk" data-v="${T.insist === i ? 'force' : 'insist'}:${i}" title="She advises against it: her trust in you falls">${T.insist === i ? (v3 ? 'Yes, recommend it anyway' : 'Yes, order it anyway') : (v3 ? 'Recommend it against her advice' : 'Order it against her advice')}</button>`
         : `<button class="btn" disabled>She refuses</button>`;
       return `<div class="sk-pkg${rec ? ' rec' : ''}${p.ok ? '' : ' no'}"><h4>${esc(o.pkg.name)}${rec ? '<em>her advice</em>' : ''}</h4>
         <dl class="kv"><dt>Aircraft</dt><dd>${o.all} (${o.jets} with bombs)</dd><dt>Each one lost</dt><dd>${pct(o.loss)}</dd><dt>Expected lost</dt><dd>${o.lossJets.toFixed(1)}</dd><dt>Launchers destroyed</dt><dd>about ${o.kills.toFixed(1)} of ${o.n}</dd></dl>

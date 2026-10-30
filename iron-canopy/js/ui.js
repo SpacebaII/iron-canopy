@@ -435,7 +435,8 @@ function brief() {
     // the step before, cut to two lines, and the current one whole: the current step must never scroll out of sight
     const shown = steps.filter((s, i) => s.cur || (s.done && i >= cur - 1));
     h = `<h3 data-act="briefMin" title="Collapse or expand">${esc(C.lesson.title)}<em>step ${cur + 1} of ${steps.length}</em></h3><div class="steps" style="counter-reset:st ${Math.max(0, cur - 1)}">${shown.map(s => `<div class="step ${s.done ? 'done' : 'cur'}"><span>${esc(s.text)}</span></div>`).join('')}</div>${left > 0 ? `<p class="hint">${left} more step${left > 1 ? 's' : ''} after this.</p>` : ''}<button class="howbtn" data-act="retryLesson" title="Start this lesson again from its first step">Restart lesson</button>`;
-  } else if (S.story && S.story.act < 4 && IC.deskOn && IC.deskOn(S)) h = deskPanel();
+  } else if (S.story && S.story.v3) h = sagaPanel();
+  else if (S.story && S.story.act < 4 && IC.deskOn && IC.deskOn(S)) h = deskPanel();
   else if (S.story && S.story.act !== 4 && ui.compact()) h = nextGoal();
   else if (S.story && S.story.act !== 4) {
     // Act I: the chapter's goals two at a time, the first with a tip on how; later acts: all goals. Each shows how far along it is
@@ -458,6 +459,22 @@ function brief() {
   $('brief').classList.toggle('next', ui.compact() && !!S.story);
   $('brief').classList.toggle('desk', !!(S.story && IC.deskOn && IC.deskOn(S)));
   setHTML($('brief'), h);
+}
+/* (story v3) the chapter: who you are and whose name the board carries, the operation's tasks with Ask and Show,
+   or the next chapter with Go on */
+function sagaPanel() {
+  const I = IC.sagaInfo(S); if (!I) return '';
+  const c = I.c, head = c ? `${IC.sagaLabel(S, c)} · ${c.t}` : 'Ashford';
+  let h = `<h3 data-act="briefMin" title="Collapse or expand"><span>${esc(head)}</span><em>${I.at} of ${I.of}</em></h3>
+    <p class="hint">${esc(I.role)}${I.signer ? ` · ${esc(I.signer)}` : ''}</p>`;
+  if (I.ph === 'op' && c && c.op) {
+    if (c.op.brief) h += `<p class="hint">${esc(c.op.brief)}</p>`;
+    h += `<div class="goals">${I.tasks.map(t => `<div class="goalrow ${t.ok ? 'done' : ''}"><i>${t.ok ? '✓' : ''}</i><span>${esc(t.t)}${t.prog ? `<small>${esc(t.prog)}</small>` : ''}</span>${t.ask ? `<button class="howbtn" data-act="sagaAsk" data-v="${t.i}" title="The request goes to the people who can do it; ${esc(IC.SAGA_STAGES[I.stage].name)} signs">Ask</button>` : ''}${t.at ? `<button class="howbtn" data-act="sagaShow" data-v="${esc(t.at)}">Show</button>` : ''}</div>`).join('')}</div>`;
+    const raid = I.raid === 'due' ? 'A raid is expected.' : I.raid === 'flying' ? 'The raid is coming in.' : I.raid === 'over' ? `The raid is over${I.hits ? `: ${I.hits} hit${I.hits > 1 ? 's' : ''} on the site` : ''}.` : '';
+    h += `<p class="hint">${raid ? esc(raid) + ' ' : ''}${I.left > 0 ? `${esc(U.dur(I.left))} left.` : 'It ends when the raid is over.'}</p>`;
+  } else if (I.ph === 'wait' && I.n) h += `<p class="hint">${esc(I.next || '')}</p><button class="btn" data-act="sagaGo" title="Time runs fast until the next chapter, and stops for anything that needs you">Go on</button>`;
+  else if (I.ph === 'scene' || I.ph === 'after') h += `<p class="hint">A scene is waiting.</p><button class="btn" data-act="sagaRead">Read it</button>`;
+  return h;
 }
 /* (brief 69) the Director's desk: the Minister's mandate with its date (Act I), the next step under it with How? and
    Show me, then what is on the desk (each pressure with its date, how it stands, what happens if it is left and

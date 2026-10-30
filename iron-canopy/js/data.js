@@ -205,7 +205,31 @@ IC.ADVISORS = {
   YOU: { name: 'You, years later', role: 'Looking back', tag: 'YOU' },
   VOLKAN: { name: 'Gen. Taras Volkan', role: 'Commander of their air force', tag: 'VOLKAN' },
   MOREVA: { name: 'Capt. Ilya Moreva', role: 'Fighter pilot, their air force', tag: 'MOREVA' },
-  KOLAR: { name: 'Vesna Kolar', role: 'Newsreader, their state television', tag: 'TV' }
+  KOLAR: { name: 'Vesna Kolar', role: 'Newsreader, their state television', tag: 'TV' },
+  // (story v3) Preston's cast: the narrator's family, friends and colleagues
+  ME: { name: 'You', role: 'The narrator, then', tag: 'YOU' },
+  NADIA: { name: 'Nadia', role: 'Your wife, a furniture restorer', tag: 'NADIA' },
+  BEA: { name: 'Bea', role: 'Nadia\u2019s colleague at the workshop', tag: 'BEA' },
+  RINA: { name: 'Rina', role: 'Nadia\u2019s sister', tag: 'RINA' },
+  JUNE: { name: 'June', role: 'Trainee controller, then records officer', tag: 'JUNE' },
+  DARA: { name: 'Dara', role: 'A colleague in the control building', tag: 'DARA' },
+  TOMAS: { name: 'Tomas', role: 'Porter, then the Westhaven reception hall', tag: 'TOMAS' },
+  ANA: { name: 'Ana', role: 'Mira\u2019s daughter', tag: 'ANA' },
+  LUKA: { name: 'Luka', role: 'Mira\u2019s son', tag: 'LUKA' },
+  SERA: { name: 'Sera Vale', role: 'Records clerk, later deputy coordinator', tag: 'SERA' },
+  ROSE: { name: 'Rose Pelling', role: 'Laundry supervisor, East Bank Hospital', tag: 'ROSE' },
+  MARIT: { name: 'Marit', role: 'Laundry worker, East Bank Hospital', tag: 'MARIT' },
+  AMAL: { name: 'Amal', role: 'Hospital maintenance, East Bank', tag: 'AMAL' },
+  ELIAN: { name: 'Elian', role: 'Technician at a small civil airfield', tag: 'ELIAN' },
+  EMIL: { name: 'Emil', role: 'A controller at the Northern Area Centre, years ago', tag: 'EMIL' },
+  IVO26: { name: 'Ivo Marsh, at 26', role: 'Trainee controller, years ago', tag: 'IVO' },
+  BOY: { name: 'The boy at East Bank', role: 'Waiting at the hospital', tag: 'BOY' },
+  BRANDT: { name: 'Maj. Ilse Brandt', role: 'Military logistics', tag: 'BRANDT' },
+  // people met once, by what they do
+  ADMIN: { name: 'Administrator', role: '', tag: '' }, CLERK: { name: 'Clerk', role: '', tag: '' }, FOREMAN: { name: 'Foreman', role: '', tag: '' },
+  LIAISON: { name: 'Liaison officer', role: '', tag: '' }, ASSIST: { name: 'Assistant', role: '', tag: '' }, MAN: { name: 'A man waiting', role: '', tag: '' },
+  NURSE: { name: 'Nurse', role: '', tag: '' }, WORKER: { name: 'Intake worker', role: '', tag: '' }, OFFICER: { name: 'Duty officer', role: '', tag: '' },
+  DRIVER: { name: 'Driver', role: '', tag: '' }, PILOT: { name: 'Pilot', role: '', tag: '' }, VOICE: { name: 'A voice on the line', role: '', tag: '' }
 };
 /* (brief 70) the cast: who each person is, how they start out with you, and their face (render-portrait.js draws it).
    trust is 0-100 (st.cast); words for it in IC.trustWord. face: skin, hair colour, hair (short, long, bun, bald,
@@ -236,6 +260,23 @@ IC.CAST = {
   VOLKAN: { trust: 30, foe: true, bio: 'Commander of their air force. Cold and professional. His intercepted orders are the voice of the raids.', face: { skin: 1, hairC: '#2a2622', hair: 'crop', coat: 'uniform', coatC: '#3d3a46', age: 2 } },
   MOREVA: { trust: 50, foe: true, bio: 'A fighter pilot who flies alongside our airliners, close enough to wave. He has a daughter.', face: { skin: 2, hairC: '#6b4a2a', hair: 'crop', coat: 'pilot', coatC: '#3d3a46', age: 0 } },
   KOLAR: { trust: 30, foe: true, bio: 'The face of their state television. Every war needs someone to explain it to the people at home.', face: { skin: 1, hairC: '#d9c08a', hair: 'bob', coat: 'suit', coatC: '#1f2730', age: 1, ear: 1 } },
+  NADIA: { trust: 60, home: true, bio: 'Your wife. A furniture restorer at a cooperative workshop, with plans of her own.', face: { skin: 3, hairC: '#1d1410', hair: 'bun', coat: 'shirt', coatC: '#5d7ea6', age: 0 } },
+  BEA: { trust: 60, home: true, bio: 'Nadia\u2019s colleague at the workshop. Brisk and kind.', face: { skin: 1, hairC: '#a9a9a9', hair: 'crop', coat: 'shirt', coatC: '#7a5a3a', age: 2, glasses: 1 } },
+  RINA: { trust: 45, home: true, bio: 'Nadia\u2019s older sister. Composed and practical.', face: { skin: 3, hairC: '#1d1410', hair: 'long', coat: 'suit', coatC: '#b08a5a', age: 1 } },
+  JUNE: { trust: 55, home: true, bio: 'A trainee controller, then a records officer. Embarrassed by every correction, and good at the work.', face: { skin: 0, hairC: '#9a4a24', hair: 'long', coat: 'blouse', coatC: '#cdbb98', age: 0 } },
+  DARA: { trust: 55, home: true, bio: 'A colleague in the control building. Calm and plain-spoken.', face: { skin: 4, hairC: '#111', hair: 'bun', coat: 'shirt', coatC: '#25324a', age: 1 } },
+  TOMAS: { trust: 50, home: true, bio: 'A terminal porter, later at the Westhaven reception hall. Steady and tired; never sits down.', face: { skin: 2, hairC: '#5a5048', hair: 'crop', coat: 'shirt', coatC: '#24324a', age: 2, beard: 2 } },
+  ANA: { trust: 60, home: true, bio: 'Mira\u2019s daughter.', face: { skin: 2, hairC: '#6b4a2a', hair: 'long', coat: 'blouse', coatC: '#4a6a8a', age: 0 } },
+  LUKA: { trust: 60, home: true, bio: 'Mira\u2019s son.', face: { skin: 2, hairC: '#6b4a2a', hair: 'crop', coat: 'shirt', coatC: '#a22a2a', age: 0 } },
+  SERA: { trust: 55, home: true, bio: 'A records clerk in the emergency office, later the deputy coordinator. Patient with the public, impatient with bad answers.', face: { skin: 0, hairC: '#b8955a', hair: 'bun', coat: 'blouse', coatC: '#6a6a6a', age: 0 } },
+  ROSE: { trust: 50, home: true, bio: 'Laundry supervisor at East Bank Hospital. Direct; speaks for her staff.', face: { skin: 5, hairC: '#9a9a9a', hair: 'crop', coat: 'shirt', coatC: '#24324a', age: 2 } },
+  MARIT: { trust: 50, home: true, bio: 'A laundry worker at East Bank. Worried about the bus at five.', face: { skin: 1, hairC: '#d8c08a', hair: 'bob', coat: 'shirt', coatC: '#4a7aa6', age: 1 } },
+  AMAL: { trust: 50, home: true, bio: 'Hospital maintenance at East Bank.', face: { skin: 4, hairC: '#111', hair: 'crop', coat: 'shirt', coatC: '#2a4a8a', age: 1, beard: 1 } },
+  ELIAN: { trust: 45, home: true, bio: 'A technician at a small civil airfield. Defensive before anyone accuses him.', face: { skin: 2, hairC: '#2a2018', hair: 'crop', coat: 'shirt', coatC: '#1a1a1a', age: 1 } },
+  EMIL: { trust: 50, home: true, bio: 'A controller at the Northern Area Centre, thirty-four years before the war.', face: { skin: 2, hairC: '#3a2a20', hair: 'swept', coat: 'shirt', coatC: '#e9edf0', age: 1 } },
+  IVO26: { trust: 50, home: true, bio: 'Ivo Marsh at twenty-six, a trainee beside the controller that night.', face: { skin: 1, hairC: '#8a6a40', hair: 'swept', coat: 'shirt', coatC: '#e9edf0', age: 0 } },
+  BOY: { trust: 50, home: true, bio: 'A boy waiting at East Bank Hospital, with a red bag whose zip sticks.', face: { skin: 3, hairC: '#1d1410', hair: 'crop', coat: 'shirt', coatC: '#7a7a7a', age: 0 } },
+  BRANDT: { trust: 50, home: true, bio: 'Military logistics. Precise, and fair about what is old and what is small.', face: { skin: 2, hairC: '#c9b07a', hair: 'bun', coat: 'uniform', coatC: '#2f3d2c', age: 1 } },
   ENVOY: { trust: 50, ally: true, bio: 'Our allies\u2019 envoy. Friendly, and always counting.', face: { skin: 2, hairC: '#a8a39a', hair: 'bob', coat: 'suit', coatC: '#24405e', age: 3 } }
 };
 

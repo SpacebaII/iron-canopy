@@ -142,6 +142,7 @@ IC.strikeTalk = function (S, sec, grp) {
 IC.strikeBlock = function (S) {
   const X = S0(S), E = S.enemy;
   if (!S.wp) return 'There is no war plan for this game: nothing to strike.';
+  if (IC.sagaOn && IC.sagaOn(S) && IC.sagaLock(S, 'strike')) return IC.sagaLock(S, 'strike');
   if (!E || !E.war) return 'We are not at war. A strike across the border now would start one.';
   if (X.cur.length) return 'Our last strike is still in the air.';
   const per = IC.trustOf(S, 'CDS') >= IC.STRIKE.high ? IC.STRIKE.perHigh : IC.STRIKE.per;
