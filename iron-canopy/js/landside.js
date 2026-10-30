@@ -540,7 +540,9 @@ function kerbs(S, ap, bl) {
     if (!lines.length) continue;
     // step off the loop first, straight out
     // (a small search first: the network is usually close)
-    const path = IC.gridRoute(box(8), 0.1, B.concat(own), o.n, near, { snapEnd: snap }) || IC.gridRoute(bb, 0.1, B.concat(own), o.n, near, { snapEnd: snap });
+    // (aimed at the nearest point of the network: a search over the whole 6 km box without an aim took over 100 ms)
+    const aim = snap(o.n), blocks = B.concat(own);
+    const path = IC.gridRoute(box(8), 0.1, blocks, o.n, near, { to: aim, snapEnd: snap }) || IC.gridRoute(bb, 0.1, blocks, o.n, near, { to: aim, snapEnd: snap });
     if (!path) continue;
     const pts = [o.from].concat(path);
     L.roads.push({ pts, w: 0.12, out: true, kind: 'out', by: o.t.id });

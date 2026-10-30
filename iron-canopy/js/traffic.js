@@ -736,7 +736,9 @@ IC.trafficRebuild = function (S) {
    a freeze every two game minutes and at the start and end of every air raid alert. A reading now takes READ_STEPS
    steps, a fixed share of the links each (a count, not a clock, so a seeded game stays the same game). The factors of
    the hour are fixed when a reading starts; a link keeps riding its slots at its old speed until its turn comes. */
-const READ_STEPS = 48;
+// (240 steps: a minute at 0.25 s, so a reading costs a fifth of a millisecond a step rather than a millisecond
+// for twelve seconds of every two minutes)
+const READ_STEPS = 240;
 function readLinks(S, T, n) {
   const R = T.rd, W = S.world, F = T.F, { fi, fo, ff, fa, fg, g } = R, links = T.links, end = Math.min(links.length, R.i + n);
   for (let k = R.i; k < end; k++) {

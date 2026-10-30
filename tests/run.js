@@ -6516,6 +6516,31 @@ test('airport: a runway or taxiway with an aircraft moving on it cannot be bulld
   assert(/on it now/.test(IC.aptRemoveBlock(S, ap, p)), 'no reason given for keeping the taxiway');
   assert(!IC.aptRemove(S, ap, p.id) && ap.parts.includes(p), 'the taxiway was bulldozed under an aircraft');
 }, true);
+test('airport: a runway with an arrival on final or a departure lined up for it cannot be bulldozed, and says why', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  let hit = null;
+  for (let i = 0; i < 2 * 3600 / 0.25 && !hit; i++) {
+    IC.step(S, 0.25);
+    for (const b of IC.bases(S)) for (const m of b.moves || []) if (!m.dead && m.plan && m.plan.rw && (m.phase === 'final' || m.phase === 'hold' || m.phase === 'lineup' || m.phase === 'wait')) { hit = { b, m, rw: m.plan.rw }; break; }
+  }
+  assert(hit, 'no aircraft on final or waiting for a runway');
+  // (it is still well off the pavement: the old test, an aircraft on the runway, did not see it)
+  assert(/landing on it or lined up for it|on it now/.test(IC.aptRemoveBlock(S, hit.b, hit.rw)), `no reason given for keeping the runway: "${IC.aptRemoveBlock(S, hit.b, hit.rw)}"`);
+  assert(!IC.aptRemove(S, hit.b, hit.rw.id) && hit.b.parts.includes(hit.rw), 'the runway was bulldozed under an aircraft on final');
+}, true);
+test('builder: an upgrade that only changes the lights keeps a runway\'s wear; new pavement resets it', () => {
+  const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
+  const ap = S.byId[S.story.cap], rw = ap.parts.find(p => p.kind === 'runway' && p.built);
+  S.budget = 1e6; rw.wear = 0.6; rw.hp = rw.max * 0.7;
+  const finish = () => { for (let i = 0; i < 50 && ap.works.length; i++) { for (const w of ap.works) w.prog = 1; IC.updateBases(S, 0.1); } };
+  assert(IC.bldUpgrade(S, ap, rw, { lit: rw.lit === false }), 'the lights could not be changed');
+  finish();
+  assert(Math.abs(rw.wear - 0.6) < 1e-9 && rw.hp < rw.max, `new edge lights resurfaced the runway: wear ${rw.wear}, hp ${rw.hp}/${rw.max}`);
+  const mat = IC.paveOf(rw) === 'conc' ? 'asph' : 'conc';
+  assert(IC.bldUpgrade(S, ap, rw, { mat }), 'the pavement could not be changed');
+  finish();
+  assert(rw.wear === 0 && rw.hp === rw.max && IC.paveOf(rw) === mat, `new pavement did not reset wear: ${rw.wear}, ${IC.paveOf(rw)}`);
+});
 test('aviation: an airliner whose route is dropped while it is in the air leaves the fleet once it lands', () => {
   const S = IC.newGame({ seed: 12345, mode: 'story', preset: 'network', hour: 10 });
   run(S, 1 / 3);

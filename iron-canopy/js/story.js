@@ -1084,8 +1084,9 @@ IC.storyTick = function (S, dt) {
   const st = S.story, C = S.camp;
   for (const e of C.sched) if (!e.done && S.time >= e.t) { e.done = true; e.fn(); }
   if (!S.first && IC.firstLandingTick) IC.firstLandingTick(S);
-  // goals
-  for (const g of st.goals) {
+  // goals, looked at once a game second: a check counts an airport's stands and hangars, and every step was dear
+  st.goalT = (st.goalT || 0) - dt;
+  if (st.goalT <= 0) { st.goalT = 1; for (const g of st.goals) {
     if (g.done || !g.check()) continue;
     g.done = true; g.doneT = S.time;
     // a goal that ends badly (a contract declined or missed) counts for moving on, and earns nothing
@@ -1099,7 +1100,7 @@ IC.storyTick = function (S, dt) {
     IC.sfx && IC.sfx.ui('ok');
     IC.emit(S, 'goal', g);
     if (st.act === 1 && st.ch === 0 && g.id === 'first') startChapter(S, 1);
-  }
+  } }
   if (st.act === 1) actOneTick(S);
   // (round 4) the player's clock, the milestones and the peacetime deck (deck.js)
   if (IC.deckTick) IC.deckTick(S, dt);

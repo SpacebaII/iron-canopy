@@ -35,13 +35,17 @@ function convexPieces(P0) {
   // (a vertex on the ear's edge counts as inside: an L's inner corner lies on the diagonal across it)
   const inTri = (p, a, b, c) => cross(a, b, p) >= -1e-12 && cross(b, c, p) >= -1e-12 && cross(c, a, p) >= -1e-12 && U.dist(p, a) > 1e-9 && U.dist(p, b) > 1e-9 && U.dist(p, c) > 1e-9;
   let guard = 0;
+  // (only a vertex that turns right can lie inside an ear: the fence round a big airport has hundreds of corners,
+  // and testing every one against every candidate ear made a hitch of tens of milliseconds)
+  const reflex = () => { const R = []; for (let k = 0; k < idx.length; k++) { const i0 = idx[(k + idx.length - 1) % idx.length], i1 = idx[k], i2 = idx[(k + 1) % idx.length]; if (cross(P[i0], P[i1], P[i2]) <= 0) R.push(i1); } return R; };
   while (idx.length > 3 && guard++ < 5000) {
     let cut = false;
+    const R = reflex();
     for (let k = 0; k < idx.length; k++) {
       const i0 = idx[(k + idx.length - 1) % idx.length], i1 = idx[k], i2 = idx[(k + 1) % idx.length];
       const a = P[i0], b = P[i1], c = P[i2];
       if (cross(a, b, c) <= 0) continue;   // (counter-clockwise: an ear turns left)
-      if (idx.some(j => j !== i0 && j !== i1 && j !== i2 && inTri(P[j], a, b, c))) continue;
+      if (R.some(j => j !== i0 && j !== i1 && j !== i2 && inTri(P[j], a, b, c))) continue;
       tris.push([i0, i1, i2]); idx.splice(k, 1); cut = true; break;
     }
     if (!cut) break;
@@ -86,7 +90,14 @@ IC.polyDepth = depth;
 const bbOf = P => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const p of P) { if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x; if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y; } return [x0, y0, x1, y1]; };
 const bbHit = (a, b, m) => a[0] - m <= b[2] && b[0] - m <= a[2] && a[1] - m <= b[3] && b[1] - m <= a[3];
 /* a shape: convex pieces and a bounding box; lines are pieces too, one quad a segment, widened by r */
-IC.shapePoly = function (P) { return { poly: P, pieces: convexPieces(P), bb: bbOf(P) }; };
+/* (the convex pieces are cut only when something asks for them: a shape kept for distances alone, like the fence a
+   road out is routed round, never pays for them) */
+IC.shapePoly = function (P) {
+  const sh = { poly: P, bb: bbOf(P) };
+  let pc = null;
+  Object.defineProperty(sh, 'pieces', { get() { return pc || (pc = convexPieces(P)); }, enumerable: true, configurable: true });
+  return sh;
+};
 IC.shapeLine = function (pts, r) {
   const pieces = [];
   for (let i = 1; i < pts.length; i++) {
@@ -216,7 +227,10 @@ IC.aptElements = function (S, ap, o) {
   const L = ap.land;
   if (L) {
     for (const it of L.items) {
-      const sh = IC.shapePoly(IC.partOutline(it)), nm = it.name || `the ${U.lc(IC.LAND[it.kind] ? IC.LAND[it.kind].name : it.kind)}`;
+      // (a car park's outline has many corners: its shape is kept until it moves)
+      const k = [it.x, it.y, it.a, it.w, it.h, it.poly && it.poly.length].join();
+      if (it._shk !== k) { it._shk = k; it._sh = IC.shapePoly(IC.partOutline(it)); }
+      const sh = it._sh, nm = it.name || `the ${U.lc(IC.LAND[it.kind] ? IC.LAND[it.kind].name : it.kind)}`;
       out.push({ cat: it.kind === 'park' || it.kind === 'taxi' || it.kind === 'stop' ? 'park' : 'land', it, sh, name: nm, own: true });
     }
     for (const r of L.roads) out.push({ cat: 'road', r, sh: IC.shapeLine(r.pts, (r.w || 0.1) / 2), name: `the ${LAND_WORD[r.kind] || (r.kerb ? 'kerb road' : r.out ? 'road out' : 'driveway')}${r.by && ap.parts.find(q => q.id === r.by) ? ' at ' + name(ap.parts.find(q => q.id === r.by)) : ''}`, own: true, lv: r.lv || 0, land: r });
@@ -227,22 +241,31 @@ IC.aptElements = function (S, ap, o) {
     for (const e of out) bb = bb ? [Math.min(bb[0], e.sh.bb[0]), Math.min(bb[1], e.sh.bb[1]), Math.max(bb[2], e.sh.bb[2]), Math.max(bb[3], e.sh.bb[3])] : e.sh.bb.slice();
     if (bb) {
       bb = [bb[0] - 30, bb[1] - 30, bb[2] + 30, bb[3] + 30];
-      const lbb = l => l.bb || (l.bb = bbOf(l.pts));
-      // (a road's name, with the place it is near, only when something asks for it: most callers want the shape)
-      const add = (l, cat, word, extra) => {
-        if (!l.pts || l.pts.length < 2 || !bbHit(lbb(l), bb, 0)) return;
-        for (const run of IC.openRuns(W, l.pts)) { const e = Object.assign({ cat, l, sh: IC.shapeLine(run, (IC.ROAD_W[l.cls] || 0.1) / 2), world: true, lv: 0 }, extra || {}); let nm = null; Object.defineProperty(e, 'name', { get: () => nm == null ? (nm = word()) : nm, enumerable: true }); out.push(e); }
-      };
-      const place = l => { const m = l.pts[l.pts.length >> 1]; return S.infra ? IC.nearPlace(S, m.x, m.y) : ''; };
-      for (const e of W.edges || []) add(e, 'road', () => `the ${CLS_WORD[e.cls] || 'road'} ${place(e)}`, { edge: e, ownRoad: e.a === ap.id || e.b === ap.id || e.apt === ap.id });
-      for (const r of W.ramps || []) add(r, 'road', () => `a slip road ${place(r)}`, { ramp: true });
-      for (const l of W.lanes || []) add(l, 'road', () => `a farm lane ${place(l)}`, { lane: true });
-      for (const c of (W.cities || []).concat(W.villages || [])) if (c.streets && U.dxy(c.x, c.y, (bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2) < (c.r || 20) * 2 + (bb[2] - bb[0])) for (const l of c.streets) add(l, 'road', () => `a street of ${c.name}`, { street: c });
-      for (const r of W.rails || []) add(Object.assign(r, { cls: r.cls || 'rail' }), 'rail', () => `the railway ${place(r)}`);
+      // (kept until the box or the country's roads change: cutting every road near a big airport at its tunnels
+      // took over 10 ms, and the landside asks for it several times as it lays its roads)
+      const key = bb.map(v => v.toFixed(1)).join() + ':' + (W.edges || []).length + ':' + (W.ramps || []).length + ':' + (W.lanes || []).length + ':' + (W.tunnels || []).length + ':' + (S.worldDirty ? S.worldDirty.length : 0) + ':' + (ap.land && ap.land.ver || 0);
+      if (!ap._wel || ap._wel.key !== key || ap._wel.W !== W) ap._wel = { key, W, list: worldElements(S, ap, bb) };
+      for (const e of ap._wel.list) out.push(e);
     }
   }
   return out;
 };
+function worldElements(S, ap, bb) {
+  const W = S.world, out = [];
+  const lbb = l => l.bb || (l.bb = bbOf(l.pts));
+  // (a road's name, with the place it is near, only when something asks for it: most callers want the shape)
+  const add = (l, cat, word, extra) => {
+    if (!l.pts || l.pts.length < 2 || !bbHit(lbb(l), bb, 0)) return;
+    for (const run of IC.openRuns(W, l.pts)) { const e = Object.assign({ cat, l, sh: IC.shapeLine(run, (IC.ROAD_W[l.cls] || 0.1) / 2), world: true, lv: 0 }, extra || {}); let nm = null; Object.defineProperty(e, 'name', { get: () => nm == null ? (nm = word()) : nm, enumerable: true }); out.push(e); }
+  };
+  const place = l => { const m = l.pts[l.pts.length >> 1]; return S.infra ? IC.nearPlace(S, m.x, m.y) : ''; };
+  for (const e of W.edges || []) add(e, 'road', () => `the ${CLS_WORD[e.cls] || 'road'} ${place(e)}`, { edge: e, ownRoad: e.a === ap.id || e.b === ap.id || e.apt === ap.id });
+  for (const r of W.ramps || []) add(r, 'road', () => `a slip road ${place(r)}`, { ramp: true });
+  for (const l of W.lanes || []) add(l, 'road', () => `a farm lane ${place(l)}`, { lane: true });
+  for (const c of (W.cities || []).concat(W.villages || [])) if (c.streets && U.dxy(c.x, c.y, (bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2) < (c.r || 20) * 2 + (bb[2] - bb[0])) for (const l of c.streets) add(l, 'road', () => `a street of ${c.name}`, { street: c });
+  for (const r of W.rails || []) add(Object.assign(r, { cls: r.cls || 'rail' }), 'rail', () => `the railway ${place(r)}`);
+  return out;
+}
 /* where two roads cross: a point on both centrelines that is not an end of either (ends meeting are junctions) */
 function crossing(A, B) {
   const a = A.line, b = B.line;
