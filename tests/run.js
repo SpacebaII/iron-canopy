@@ -9007,6 +9007,84 @@ test('map: the Career\'s war plan stands on their soil, fires at things that are
   assert(R && R.wave === 'w1' && R.planned > 0, 'the opening strike was not planned');
 }, true);
 
+/* ---------- story v3: Preston's story, its chapters, operations and choices (saga.js) ---------- */
+let sagaS = null;
+const sagaGame = () => sagaS || (sagaS = IC.newGame({ seed: 1, mode: 'story', map: IC.CAREER_MAP, story: 'v3', hour: 7 }));
+// run the story on, skipping its scenes (their choices made by default), in big steps while nothing hostile flies
+const sagaRun = (S, until, maxH) => {
+  const t1 = S.time + (maxH || 2000) * 3600;
+  while (S.time < t1 && !until()) {
+    const busy = (S.enemy.raid && S.enemy.raid.launched) || S.threats.some(t => !t.dead && !t.d.civil && t.type !== 'ftr');
+    S.paused = false; IC.step(S, busy ? 0.5 : 8);
+    if (S.story.cutQ.length) IC.cutSkipAll(S);
+  }
+};
+const sagaAt = (S, id) => { const c = IC.SAGA[S.story.v3.i]; return c && c.id === id; };
+test('story v3: every chapter is in order, every panel has a painting or a storyboard, every site is on the map', () => {
+  const S = sagaGame(), ids = new Set(), arts = new Set(require('fs').readdirSync(require('path').join(__dirname, '../iron-canopy/art/cut')).map(f => f.replace(/\.jpg$/, '')));
+  let m = -1, painted = 0, boards = 0;
+  for (const c of IC.SAGA) {
+    assert(!ids.has(c.id), `${c.id} twice`); ids.add(c.id);
+    assert(c.m >= m, `${c.id} comes out of order`); m = c.m;
+    for (const p of (c.p || []).concat(c.after || [])) {
+      assert(p.art, `a panel of ${c.id} has no picture named`);
+      if (arts.has(p.art)) painted++; else { boards++; assert(p.shot, `${p.art} (${c.id}) has neither a painting nor a storyboard`); }
+      if (p.ask) assert(p.ask.k && p.ask.opts.length >= 1, `${c.id}'s choice has no options`);
+    }
+    for (const id of (c.op && c.op.sites) || []) assert(IC.sagaSite(S, id), `${c.id}: the site ${id} is not on the map`);
+    for (const t of (c.op && c.op.tasks) || []) { assert(IC.SAGA_TASKS[t.k], `${c.id}: no task kind ${t.k}`); if (t.at) assert(IC.sagaSite(S, t.at), `${c.id}: the task's site ${t.at} is not on the map`); }
+    for (const h of (c.op && c.op.raid && c.op.raid.hits) || []) assert(S.wp.bats[h.bat], `${c.id}'s raid names a battery the plan does not have: ${h.bat}`);
+  }
+  assert(IC.SAGA.length >= 59 && painted >= 80, `${IC.SAGA.length} chapters, ${painted} painted panels`);
+  assert(S.wp.waves.filter(w => /^v3_/.test(w.id)).length === IC.SAGA.filter(c => c.op && c.op.raid).length + 1, 'not one wave for each raid of the story');
+}, true, 'saga');
+test('story v3: the conditions read the story\'s flags: values, any of several tests, not', () => {
+  const S = { story: { flags: new Map([['a', 'x'], ['b', true], ['W14:hit:east_bank', 2]]) } };
+  const yes = ['a=x|y', 'a=y | b', '!c', 'W14:hit:east_bank', '!W14:hit', 'a!=z', 'a=x & b', 'c=1 | a=x & b'], no = ['a=y|z', '!b', 'a=x & c', 'c=1 | d', 'a!=x'];
+  for (const c of yes) assert(IC.sagaIf(S, c), `${c} should hold`);
+  for (const c of no) assert(!IC.sagaIf(S, c), `${c} should not hold`);
+});
+test('story v3: the opening plays before the strike, the strike is fixed and starts the war, and the appointment opens the civil desk', () => {
+  const S = sagaGame(), X = S.story.v3;
+  assert(S.story.v3 && X.stage === 1 && IC.sagaLock(S, 'civil') && IC.sagaLock(S, 'deploy'), 'the story does not start in the tower');
+  assert(S.infra.filter(a => a.kind === 'airport' && a.owner === 'us').length >= 3 && !S.enemy.war, 'the three airports are not running before the war');
+  sagaRun(S, () => sagaAt(S, 'C04') && X.ph !== 'wait', 400);
+  assert(sagaAt(S, 'C04') && S.enemy.war, 'the strike did not start the war');
+  assert(['repair', 'space', 'decided'].includes(IC.sagaFlag(S, 'depart')), 'the days before did not add up to how Nadia left');
+  sagaRun(S, () => IC.sagaFlag(S, 'C04') != null, 48);
+  assert(IC.sagaFlag(S, 'C04') === 'fixed' && IC.sagaFlag(S, 'alarm') === 'raised', 'the strike is not fixed');
+  sagaRun(S, () => X.stage >= 2, 400);
+  assert(sagaAt(S, 'C08') && !IC.sagaLock(S, 'civil') && IC.sagaLock(S, 'deploy'), 'the appointment did not open the civil desk and only that');
+  assert(S.units.length > 10, 'the armed forces did not take up the defence the morning after');
+}, true, 'saga');
+test('story v3: an operation\'s result comes from its tasks and what the raid hit there', () => {
+  const S = IC.loadSave(IC.saveGame(sagaGame())), X = S.story.v3;
+  // jump to the eve of W06 (three airports, a ballistic raid on the capital's)
+  const i = IC.SAGA.findIndex(c => c.id === 'W06'), c = IC.SAGA[i];
+  X.i = i - 1; X.ph = 'wait'; X.op = null; S.enemy.raid = null; S.time = Math.max(S.time, IC.sagaTimeOf(S, c.m));
+  X.tickT = 0; IC.sagaTick(S, 1);
+  // its scene first, then the operation
+  assert(X.ph === 'scene' && S.story.cutQ.some(q => q.id === 'v3:W06'), 'the chapter did not open on its scene');
+  IC.cutSkipAll(S); X.tickT = 0; IC.sagaTick(S, 1);
+  assert(X.op && X.op.id === 'W06' && IC.sagaFlag(S, 'raid:W06'), 'the operation did not start with its raid due');
+  const ap = IC.sagaSite(S, 'ashford_airport');
+  for (let k = 0; k < 3; k++) IC.emit(S, 'impact', { x: ap.x + k, y: ap.y, hit: true });
+  X.op.raid = 'over'; S.time = X.op.t1 + 1; X.tickT = 0; IC.sagaTick(S, 1);
+  assert(!X.op && ['partial', 'failure'].includes(IC.sagaFlag(S, 'W06')) && IC.sagaFlag(S, 'W06:hit') === 3, `three hits on Ashford gave ${IC.sagaFlag(S, 'W06')}`);
+  assert(IC.sagaFlag(S, 'W06:hit:ashford_airport') === 3, 'the hits are not counted by site');
+  // its aftermath shows only the panel for what happened
+  const after = IC.CUTSCENES['v3:W06:after'].panels.filter(p => IC.sagaIf(S, p.if));
+  assert(after.length === 1 && after[0].if === 'W06=' + IC.sagaFlag(S, 'W06'), 'the aftermath does not follow the result');
+}, true, 'saga');
+test('story v3: a choice routes the scenes that follow, and a save keeps the story', () => {
+  const S = IC.loadSave(IC.saveGame(sagaGame())), X = S.story.v3;
+  IC.sagaPick(S, 'door', 'C'); IC.sagaPick(S, 'door', 'A');
+  assert(IC.sagaFlag(S, 'door') === 'C', 'a choice made can be made again');
+  const c25 = IC.CUTSCENES['v3:C25'].panels.filter(p => IC.sagaIf(S, p.if)).map(p => (p.says || []).map(x => x[1]).join(' ')).join(' ');
+  assert(/After I had the gun/.test(c25) && !/They have her/.test(c25), 'the chair beside the bed does not follow what happened in the room');
+  const S2 = IC.loadSave(IC.saveGame(S));
+  assert(S2.story.v3 && S2.story.v3.i === X.i && IC.sagaFlag(S2, 'door') === 'C' && S2.wp.waves.length === S.wp.waves.length, 'the save lost the story');
+}, true, 'saga');
 /* ---------- run ---------- */
 const seedOf = name => { let h = 2166136261; for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619); return h >>> 0; };
 /* run one test; what it prints is kept and shown under its result line */

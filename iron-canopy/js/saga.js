@@ -277,7 +277,12 @@ IC.sagaLock = function (S, key) {
 };
 
 /* ---------- operations ---------- */
-const dayN = (ap, S) => (ap && ap.paxLog || []).filter(x => x.t > S.time - 86400).length;
+// landings in the last 24 h: today's by the hour, and yesterday's from the hours not yet come round again
+const dayN = (ap, S) => {
+  if (!ap || !IC.aptDayLog) return 0;
+  const L = IC.aptDayLog(S, ap), h = Math.floor((S.time % 86400) / 3600);
+  return L.arr.reduce((s, n) => s + n, 0) + (L.prev ? L.prev.arr.slice(h + 1).reduce((s, n) => s + n, 0) : 0);
+};
 const freeStands = ap => (ap.stands || []).filter(s => !s.occ && !s.ac && s.ok !== false).length;
 const coverAt = (S, p, r) => S.units.some(u => !u.dead && u.state === 'ready' && (u.d.weapon === 'sam' || u.d.weapon === 'gun') && U.dist(u, p) < (r || Math.max(60, (u.d.range || 0) * 0.6)));
 const radarAt = (S, p) => S.units.some(u => !u.dead && u.state === 'ready' && u.d.sensor && U.dist(u, p) < (u.d.range || 400) * 0.8);
