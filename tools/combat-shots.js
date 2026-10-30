@@ -4,7 +4,7 @@
    Scenes: symbols, arsenal, threats, sam-day-near, sam-day-far, sam-night-near, sam-night-far, bmd, raid, perf, and brief
    43's: long-shot (a long SAM shot and a notch), duel (fighters), drones (a drone wave with combat time), abort (a raid
    that turns back), result (the raid's result card); brief 79's icpt-clutter, icpt-storm, icpt-jink, icpt-speed,
-   icpt-spent, icpt-saturation (what makes an intercept hard, each miss forced to the cause the scene shows).
+   icpt-saturation (what makes an intercept hard, each miss forced to the cause the scene shows).
    Frames go to shots/<scene>-<n>.png. `perf` prints render and frame times; run it on two checkouts to compare. */
 const path = require('path');
 const fs = require('fs');
@@ -162,11 +162,11 @@ const SCENES = {
   // brief 79: what makes an intercept hard, seen on the map. icpt-* scenes force each miss to the cause they show
   'icpt-clutter': { frames: [0, 1000, 2000, 3000, 4200], setup: icptScene(`
     unit(S, 'shorad', at.x, at.y); unit(S, 'mr3d', at.x - 20, at.y - 50);
-    for (let i = 0; i < 6; i++) hostile(S, 'lacm', at.x + 300 + i * 18, at.y - 120 + i * 30, at);`, 'clutter', 1.6, 120, -40) },
+    for (let i = 0; i < 6; i++) hostile(S, 'lacm', at.x + 300 + i * 18, at.y - 120 + i * 30, at);`, 'clutter', 3, 210, -50, S => S.missiles.some(m => m.tti < 6)) },
   'icpt-storm': { frames: [0, 1000, 2000, 3000, 4200], setup: icptScene(`
     S.weather = { kind: 'storm', prev: 'storm', fade: 1, next: S.time + 1e6 };
     unit(S, 'vshorad', at.x, at.y); unit(S, 'shorad', at.x - 30, at.y + 30);
-    for (let i = 0; i < 5; i++) hostile(S, 'jdr', at.x + 160 + i * 14, at.y - 60 + i * 20, at, { alt: 1.5 });`, 'weather', 2.2, 70, -20) },
+    for (let i = 0; i < 5; i++) hostile(S, 'jdr', at.x + 90 + i * 12, at.y - 40 + i * 16, at, { alt: 1.5 });`, 'weather', 3.5, 45, -15, S => S.missiles.some(m => m.M.seeker === 'IR')) },
   'icpt-jink': { frames: [0, 1500, 3000, 4500, 6000], setup: icptScene(`
     unit(S, 'lrsam', at.x, at.y); unit(S, 'lr3d', at.x - 30, at.y - 40);
     IC.launchBallistic(S, 'marv', at.x + 2400, at.y - 1600, { x: at.x + 40, y: at.y - 20 });
@@ -174,9 +174,6 @@ const SCENES = {
   'icpt-speed': { frames: [0, 800, 1600, 2400, 3200], setup: icptScene(`
     unit(S, 'mrsam', at.x, at.y); unit(S, 'shorad', at.x + 20, at.y - 20); unit(S, 'mr3d', at.x - 20, at.y - 50);
     for (let i = 0; i < 3; i++) hostile(S, 'scm', at.x + 900 + i * 40, at.y - 500 + i * 30, at);`, 'speed', 1.0, 160, -90, S => S.missiles.some(m => m.tti < 12)) },
-  'icpt-spent': { frames: [0, 1000, 2000, 3000, 4500], setup: icptScene(`
-    unit(S, 'mrsam', at.x, at.y); unit(S, 'mr3d', at.x - 20, at.y - 50);
-    for (let i = 0; i < 3; i++) hostile(S, 'jdr', at.x + 820 + i * 30, at.y - 300 + i * 40, { x: at.x + 2000, y: at.y - 900 }, { alt: 4 });`, 'range', 0.7, 520, -200, S => S.missiles.some(m => m.tti < 15)) },
   'icpt-saturation': { frames: [0, 1500, 3000, 4500], setup: icptScene(`
     unit(S, 'shorad', at.x, at.y);
     for (let i = 0; i < 16; i++) hostile(S, 'owa', at.x + 120 + (i % 4) * 14, at.y - 70 + Math.floor(i / 4) * 16, at);`, null, 2.4, 70, -20) },

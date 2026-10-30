@@ -35,21 +35,21 @@ const BAL = { bal: 1, hgv: 1 };
 
 /* ---------- while it flies ---------- */
 function clutter(S, t, v, px, now) {
-  const k = Math.floor(now * 7), R = 20 * px;
-  ctx.fillStyle = 'rgba(150,232,170,1)';
-  for (let i = 0; i < 22; i++) {
+  const k = Math.floor(now * 7), R = 30 * px;
+  ctx.fillStyle = 'rgba(214,255,170,1)';
+  for (let i = 0; i < 40; i++) {
     const h = hash(i, k, t.seed || 1), a = hash(i, k + 0.5, 3) * 6.283, r = R * Math.sqrt(h);
-    ctx.globalAlpha = 0.2 + 0.45 * hash(i, k, 7);
-    const s = (0.9 + 1.4 * hash(i, 2, k)) * px;
+    ctx.globalAlpha = 0.35 + 0.55 * hash(i, k, 7);
+    const s = (1.4 + 2 * hash(i, 2, k)) * px;
     ctx.fillRect(v.x + Math.cos(a) * r - s / 2, v.y + Math.sin(a) * r * 0.8 - s / 2, s, s);
   }
   // two false echoes as big as the real one, blinking where nothing is
-  ctx.strokeStyle = 'rgba(255,150,120,1)'; ctx.lineWidth = 1 * px;
-  for (let i = 0; i < 2; i++) {
+  ctx.strokeStyle = 'rgba(255,150,120,1)'; ctx.lineWidth = 1.4 * px;
+  for (let i = 0; i < 3; i++) {
     const kk = Math.floor(now * 2.5 + i * 0.5), on = hash(i, kk, t.seed || 1);
     if (on < 0.35) continue;
-    const a = hash(i, kk, 9) * 6.283, r = (9 + 9 * hash(kk, i, 5)) * px, x = v.x + Math.cos(a) * r, y = v.y + Math.sin(a) * r * 0.8;
-    ctx.globalAlpha = 0.35 * on; ctx.strokeRect(x - 2.5 * px, y - 2.5 * px, 5 * px, 5 * px);
+    const a = hash(i, kk, 9) * 6.283, r = (10 + 16 * hash(kk, i, 5)) * px, x = v.x + Math.cos(a) * r, y = v.y + Math.sin(a) * r * 0.8;
+    ctx.globalAlpha = 0.75 * on; ctx.strokeRect(x - 3.5 * px, y - 3.5 * px, 7 * px, 7 * px);
   }
   ctx.globalAlpha = 1;
 }
@@ -123,12 +123,12 @@ function inFlight(S, px, now) {
     }
     // a heat-seeker in rain or cloud: mist round it, and its seeker hunting for the heat
     if (sk === 'IR' && IC.icptHas(m, 'weather')) {
-      for (let i = 0; i < 3; i++) { const ph = (now * 0.7 + i / 3) % 1; blob('mist', '200,206,214', x + Math.sin(i * 2.1 + now) * 6 * px, y + Math.cos(i * 1.7 + now) * 5 * px, (5 + 9 * ph) * px, 0.22 * (1 - ph)); }
+      for (let i = 0; i < 3; i++) { const ph = (now * 0.7 + i / 3) % 1; blob('mist', '214,220,228', x + Math.sin(i * 2.1 + now) * 9 * px, y + Math.cos(i * 1.7 + now) * 7 * px, (9 + 16 * ph) * px, 0.45 * (1 - ph)); }
       const a = m.a + 0.35 * Math.sin(now * 6.3 + (m.t0 || 0)), w = 0.28;
-      ctx.strokeStyle = 'rgba(255,220,160,1)'; ctx.lineWidth = 0.9 * px; ctx.globalAlpha = 0.45;
+      ctx.strokeStyle = 'rgba(255,220,160,1)'; ctx.lineWidth = 1.3 * px; ctx.globalAlpha = 0.75;
       ctx.beginPath();
-      ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a - w) * 16 * px, y + Math.sin(a - w) * 16 * px);
-      ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a + w) * 16 * px, y + Math.sin(a + w) * 16 * px);
+      ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a - w) * 24 * px, y + Math.sin(a - w) * 24 * px);
+      ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a + w) * 24 * px, y + Math.sin(a + w) * 24 * px);
       ctx.stroke(); ctx.globalAlpha = 1;
     }
   }
@@ -181,6 +181,7 @@ function trail(F, px, rgb, w) {
   ctx.globalAlpha = 1; ctx.lineCap = 'butt';
 }
 function play(F, px, now) {
+  px *= 1.6;   // a miss is a moment to see: drawn larger than the missiles round it
   const k = F.t / F.life, ca = Math.cos(F.a), sa = Math.sin(F.a), nx = -sa, ny = ca;
   if (F.cause === 'manoeuvre') {
     // it overshoots, trying to turn back after the warhead that jinked: steering jets puff, then it destroys itself
