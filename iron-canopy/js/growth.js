@@ -555,7 +555,7 @@ IC.aptSeatRoads = function (S, ap) {
       if (!IC.inTunnel(W, q.x, q.y)) L.jn.push(q);
     }
   }
-  ap._seatKey = seatKey(ap);
+  ap._seatKey = seatKey(ap); ap._wel = null;   // (the roads round the airport moved: airport-shapes.js keeps them)
   const changed = sig() !== before;
   if (changed && IC.buildRouting) IC.buildRouting(W, W.blocked);
   return changed;

@@ -1486,7 +1486,7 @@ IC.updateBases = function (S, dt) {
       w.done = true;
       IC.bldRelease(b, w);
       if (w.kind === 'upgrade' && w.ext) { IC.rwExtend(b, w.part, w.ext.end, w.ext); IC.log(S, 'info', 'BUILD', `${b.name}: ${w.part.name} extended, now ${U.km(IC.rwLen(w.part))} long.`, IC.rwAt(w.part, w.ext.end === 'a' ? 0 : 1)); IC.emit(S, 'aptBuilt', { ap: b, part: w.part }); }
-      else if (w.kind === 'upgrade') { if (w.mat) w.part.mat = w.mat; if (w.w) w.part.w = w.w; if (w.lit != null) w.part.lit = w.lit; w.part.wear = 0; w.part.hp = w.part.max; IC.log(S, 'info', 'BUILD', `${b.name}: ${U.lc(w.label)} done; open again.`, w.part.x != null ? w.part : b); }
+      else if (w.kind === 'upgrade') { if (w.mat) w.part.mat = w.mat; if (w.w) w.part.w = w.w; if (w.lit != null) w.part.lit = w.lit; if (w.mat || w.w) { w.part.wear = 0; w.part.hp = w.part.max; } IC.log(S, 'info', 'BUILD', `${b.name}: ${U.lc(w.label)} done; open again.`, w.part.x != null ? w.part : b); }
       else if (w.kind === 'build' && now) {
         batch = batch || { before: IC.bldSnapStats(b), parts: [], w };
         w.part.built = true; w.part.prog = 1; w.part.stage = null; batch.parts.push(w.part); batch.w = w;
@@ -1776,6 +1776,12 @@ IC.aptRemoveBlock = function (S, ap, p) {
   if (p.kind === 'runway' || p.kind === 'taxi') {
     const on = (ap.moves || []).filter(m => ON_PAVE.has(m.phase) && partDist(ap, p, m) < 0.1).length;
     if (on) return `${on} aircraft ${on > 1 ? 'are' : 'is'} on it now. Close it, wait until it is clear, then bulldoze it.`;
+  }
+  // (a runway with an arrival on final or landing, or a departure taxiing out to it, holding or lined up: it used to
+  // be bulldozed under them, and the aircraft landed on the grass where it had been)
+  if (p.kind === 'runway') {
+    const to = (ap.moves || []).filter(m => !m.dead && m.plan && m.plan.rw === p && (m.kind === 'arr' ? m.phase === 'final' || m.phase === 'land' || m.phase === 'rollout' : m.phase !== 'parkin')).length;
+    if (to) return `${to} aircraft ${to > 1 ? 'are' : 'is'} landing on it or lined up for it. Wait until ${to > 1 ? 'they have' : 'it has'} cleared it, then bulldoze it.`;
   }
   return '';
 };

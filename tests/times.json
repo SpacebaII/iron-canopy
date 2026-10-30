@@ -353,6 +353,8 @@
  "airport: a runway shut by our own works, or that no taxiway reaches yet, says so instead of \"closed\"": 8.2,
  "airport: a taxiway laid again over one already there is refused, and not paid for twice": 7.5,
  "airport: a runway or taxiway with an aircraft moving on it cannot be bulldozed, and says why": 8.1,
+ "airport: a runway with an arrival on final or a departure lined up for it cannot be bulldozed, and says why": 12,
+ "builder: an upgrade that only changes the lights keeps a runway's wear; new pavement resets it": 6,
  "save: a Career game with works in progress and aircraft taxiing saves, loads and plays on like the unsaved one": 27.1,
  "save: a Quick war saved with missiles in the air loads and plays on like the unsaved one": 62.3,
  "save: lessons, the Test range and the Sandbox save without dropping anything": 54.7,
