@@ -39,10 +39,12 @@ IC.drawOpsBase = function (g, S, ap, p, w, h, px, z, full, dead, now, night) {
 /* ---------- each frame, over the airport ---------- */
 IC.drawOps = function (g, S, ap, px, z, now, lbl, night, seen) {
   if (!(IC.FOCUS && IC.FOCUS.ops) || ap.owner !== 'us') return;
-  if (z > 3) standRings(g, S, ap, px, z, seen);
+  // (film mode draws the world without its data: the crews and what they work on, no rings, tags or bars)
+  const clean = IC.film && IC.film.clean;
+  if (z > 3 && !clean) standRings(g, S, ap, px, z, seen);
   const L = (ap.incs && ap.incs.list) || [];
-  for (const inc of L) if (!inc.done && z > 0.6) drawInc(g, S, ap, inc, px, z, now, lbl, night);
-  if (z > 2.2) queues(g, S, ap, px, z, lbl);
+  for (const inc of L) if (!inc.done && z > 0.6) drawInc(g, S, ap, inc, px, z, now, lbl, night, clean);
+  if (z > 2.2 && !clean) queues(g, S, ap, px, z, lbl);
 };
 
 /* every occupied stand: a thin ring for its turnaround (the selected or followed one has the big clock) */
@@ -82,7 +84,7 @@ function queues(g, S, ap, px, z, lbl) {
 }
 
 /* one incident: where it is, what is being done, and the vehicles doing it */
-function drawInc(g, S, ap, inc, px, z, now, lbl, night) {
+function drawInc(g, S, ap, inc, px, z, now, lbl, night, clean) {
   const st = IC.opsStage(inc), K = IC.OPS_INC[inc.kind], col = K.col === 'red' && (st.k === 'fire' || st.k === 'burn') ? COL.red : COL.amber;
   const rw = inc.rw && ap.parts.find(p => p.id === inc.rw), f = U.clamp(inc.t / Math.max(1, st.dur), 0, 1);
   const shut = inc.shut === 'rw' && rw && ap.opsShut && Object.values(ap.opsShut).includes(inc.id);
@@ -94,6 +96,7 @@ function drawInc(g, S, ap, inc, px, z, now, lbl, night) {
     if (inc.kind === 'excursion' && rw) { const m = ap.moves.find(x => x.id === inc.mv); if (m && m.offAt) { g.strokeStyle = 'rgba(30,26,20,0.55)'; g.lineWidth = Math.max(0.01, 1.4 * px); g.beginPath(); g.moveTo(m.offAt.x - Math.cos(m.offAt.h) * 0.6, m.offAt.y - Math.sin(m.offAt.h) * 0.6); g.quadraticCurveTo(m.offAt.x, m.offAt.y, m.x, m.y); g.stroke(); } }
     vehicles(g, S, ap, inc, st, f, rw, px, z, now, night);
   }
+  if (clean) return;
   // the ring and the bar, with what is being done and how long it has left
   const pulse = 0.5 + 0.5 * Math.sin(now * 4), R = Math.max(14 * px, 0.12) * (1 + 0.15 * pulse);
   g.lineWidth = Math.max(0.006, 2.2 * px); g.strokeStyle = col; g.beginPath(); g.arc(inc.x, inc.y, R, 0, 7); g.stroke();

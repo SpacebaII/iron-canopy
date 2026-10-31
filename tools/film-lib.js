@@ -13,7 +13,7 @@ const LIB = `
 window.wait = ms => new Promise(r => setTimeout(r, ms));
 window.seeded = a => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 /* a quiet page: no hints, story cards or staff messages over the picture */
-window.quiet = () => { IC.ui.hintsOn = false; IC.ui.cineShown = 1e9; for (const id of ['cine', 'comms', 'unlock']) { const e = document.getElementById(id); if (e) e.hidden = true; } };
+window.quiet = () => { IC.ui.hintsOn = false; IC.ui.cineShown = 1e9; if (IC.cutView) { IC.cutView.tick = () => {}; if (IC.cutView.isOpen()) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); } for (const id of ['cine', 'comms', 'unlock']) { const e = document.getElementById(id); if (e) e.hidden = true; } };
 window.steps = (S, sec, until) => { for (let i = 0; i < sec * 4; i++) { IC.step(S, 0.25); if (until) { const r = until(S); if (r) return r; } } return null; };
 window.look = (x, y, z) => { IC.cam.fly = null; IC.cam.z = z; IC.centerOn(x, y); };
 `;
@@ -21,7 +21,10 @@ window.look = (x, y, z) => { IC.cam.fly = null; IC.cam.z = z; IC.centerOn(x, y);
 async function open(o) {
   o = o || {};
   const W = o.w || 1920, H = o.h || 1080;
-  const bopt = { args: ['--enable-gpu-rasterization', '--ignore-gpu-blocklist', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] };
+  // (o.cpu, or FILM_CPU=1: the 2D canvas drawn by the CPU, no WebGL; on a machine with no graphics card the map's
+  // frames read back several times faster than through SwiftShader)
+  const cpu = o.cpu != null ? o.cpu : process.env.FILM_CPU === '1';
+  const bopt = { args: cpu ? ['--disable-gpu', '--disable-accelerated-2d-canvas', '--disable-gpu-compositing'] : ['--enable-gpu-rasterization', '--ignore-gpu-blocklist', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] };
   if (process.env.HTTPS_PROXY) bopt.proxy = { server: process.env.HTTPS_PROXY, bypass: '127.0.0.1,localhost' };
   let browser;
   try { browser = await chromium.launch(bopt); } catch (e) { const alt = process.env.CHROMIUM || '/opt/pw-browsers/chromium'; if (!fs.existsSync(alt)) throw e; browser = await chromium.launch(Object.assign({ executablePath: alt }, bopt)); }
