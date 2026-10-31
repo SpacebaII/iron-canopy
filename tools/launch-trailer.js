@@ -14,7 +14,7 @@ const PF = '/mnt/project-files';
 const OUT = path.resolve(ROOT, arg('out', 'shots/launch-trailer')), ONLY = arg('only', '');
 const DIRS = {
   P: arg('panels', PF + '/trailer/launch/panels'),
-  F: arg('fresh', PF + '/trailer/launch/fresh'),
+  F: arg('fresh', PF + '/trailer/launch/fresh2'), E: PF + '/trailer/launch/fresh',
   B: PF + '/fidelity/broll', C: PF + '/captures/clips', S: PF + '/captures/screens'
 };
 const W = 1920, H = 1080, FPS = 30, BAR = 112;
@@ -35,7 +35,7 @@ const CUT = [
   ['F|B:apt-close|flyin', 5.0, { mark: 'build', title: 'Build the airports', at: 0.8, for: 3.2 }],
   ['S:map-gate80', 3.2],
   ['F|C:build|build-site', 4.0, { ss: 2, title: 'Runway by runway. At real scale.', at: 0.4, for: 3.2 }],
-  ['F|B:apt-apron|airport', 4.0],
+  ['E|B:apt-apron|airport', 4.0],
   ['C:airport-takeoff', 3.6, { ss: 1 }],
   ['B:taxi', 3.4],
   ['F:country-pull', 4.0, { mark: 'rise' }],
