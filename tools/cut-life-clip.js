@@ -29,7 +29,7 @@ const URL = opt('url') || 'http://localhost:8766/iron-canopy/index.html', XF = 0
       IC.S.story.cutQ = []; IC.cutLife.manual = true;
       IC.cutView.open(IC.S, { id }, true);
       const V = IC.cutView, j = V.panels.findIndex(p => p.art === art);
-      if (j > 0) { V.i = j - 1; window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' })); }
+      if (j >= 0) V.goTo(j); else throw new Error(`${art} is not a panel of ${id}`);
       // the words come in at once in a clip (the clip's frames are slower than the page's own clock)
       document.querySelector('#cutv .frame').classList.add('shown');
       const g = document.querySelector('#cutv .cutghost'); if (g) g.remove();
@@ -48,7 +48,7 @@ const URL = opt('url') || 'http://localhost:8766/iron-canopy/index.html', XF = 0
       await frame.screenshot({ path: path.join(dir, String(f).padStart(5, '0') + '.jpg'), type: 'jpeg', quality: 92 });
     }
     const mp4 = path.join(tmp, n + '.mp4');
-    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(dir, '%05d.jpg'), '-vf', `scale=${W}:-2`, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', mp4]);
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(dir, '%05d.jpg'), '-vf', `scale=${W}:${Math.round(W * 9 / 32) * 2},setsar=1`, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', mp4]);
     parts.push(mp4);
     console.error('panel', s, N, 'frames');
   }

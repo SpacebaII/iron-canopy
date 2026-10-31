@@ -99,6 +99,8 @@ V.open = function (S, c, replay) {
   IC.sfx && IC.sfx.ui('chapter');
 };
 V.isOpen = () => !!V.c;
+/* a tool's way to one panel, whatever route the story is on (tools/cut-life-clip.js) */
+V.goTo = i => { if (V.c && V.panels[i]) { V.i = i; draw(); } };
 /* every frame: the next cutscene in the queue opens when nothing else is in front of the map */
 V.tick = function (S) {
   if (V.c || !S || !S.story || !S.story.cutQ || !S.story.cutQ.length) return;
