@@ -80,7 +80,7 @@ const CUT = [
   ['P:x3-5', 3.6, { line: 'Some of them are not on the stone.', at: 0.4 }],
   ['P:e01a-stone', 4.0, { fade: 'out' }],
   ['black', 8.4, { mark: 'title', title: 'IRON CANOPY', big: true, at: 0.4, for: 7.6 }],
-  ['black', 5.6, { title: 'Four years. One sky. Play it in your browser.', at: 0.6, for: 4.4, fade: 'out' }]
+  ['black', 5.6, { title: 'Four years. One sky.<br>Play it in your browser.', at: 0.6, for: 4.4, fade: 'out' }]
 ];
 /* when each shot starts, and the marks */
 let t0 = 0;
