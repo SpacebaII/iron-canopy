@@ -9038,6 +9038,18 @@ test('story v3: every chapter is in order, every panel has a painting or a story
   assert(IC.SAGA.length >= 59 && painted >= 80, `${IC.SAGA.length} chapters, ${painted} painted panels`);
   assert(S.wp.waves.filter(w => /^v3_/.test(w.id)).length === IC.SAGA.filter(c => c.op && c.op.raid).length + 1, 'not one wave for each raid of the story');
 }, true, 'saga');
+test('story v3: a painted panel moves with what its shot shows, and every painting has its depth map', () => {
+  const fs = require('fs'), path = require('path'), dir = path.join(__dirname, '../iron-canopy/art/cut');
+  const m = shot => IC.cutMood({ shot });
+  assert(m('The terminal\'s glass front erupts: a white flash, black smoke billowing').flash && m('The terminal\'s glass front erupts: a white flash').embers, 'a blast neither flashes nor burns');
+  assert(m('A rail siding in drizzle').rain && !m('A woman in a raincoat stabs at a phone').rain, 'rain read from a raincoat, or drizzle missed');
+  assert(m('Night. The table is laid for two with a candle in a jar.').flicker && m('Night.').night && !m('Night.').motes, 'a candle does not flicker, or dust floats in the dark');
+  assert(!m('three laundry bags dumped against a red fire door').embers, 'a fire door burns');
+  assert(!IC.cutMood({ art: 'c16-1', shot: 'a video call, rain on the window behind him' }).rain && IC.cutMood({ shot: 'Morning.', fx: 'snow -motes' }).snow, 'a panel cannot say what moves in it');
+  const arts = fs.readdirSync(dir).filter(f => f.endsWith('.jpg')).map(f => f.slice(0, -4));
+  const lack = arts.filter(a => !fs.existsSync(path.join(dir, 'depth', a + '.jpg')));
+  assert(!lack.length, `paintings without a depth map (python3 tools/cut-depth.py): ${lack.join(', ')}`);
+});
 test('story v3: the conditions read the story\'s flags: values, any of several tests, not', () => {
   const S = { story: { flags: new Map([['a', 'x'], ['b', true], ['W14:hit:east_bank', 2]]) } };
   const yes = ['a=x|y', 'a=y | b', '!c', 'W14:hit:east_bank', '!W14:hit', 'a!=z', 'a=x & b', 'c=1 | a=x & b'], no = ['a=y|z', '!b', 'a=x & c', 'c=1 | d', 'a!=x'];

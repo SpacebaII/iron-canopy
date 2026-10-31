@@ -1160,9 +1160,9 @@ function frame(now) {
   }
   IC.autosaveTick(S);
   fx(S, dtR, gdt);
-  // (the map is not drawn while a film covers it: the 3D view full screen, or a title card)
+  // (the map is not drawn while a film covers it: the 3D view full screen, a title card, or a cutscene's page)
   const RV = IC.replayState && IC.replayState();
-  if (!(RV && RV.film) && !(IC.film && IC.film.cover)) IC.render(S, now / 1000);
+  if (!(RV && RV.film) && !(IC.film && IC.film.cover) && !(IC.cutView && IC.cutView.isOpen())) IC.render(S, now / 1000);
   if (IC.lifeSoundEnd) IC.lifeSoundEnd();
   if (IC.sfx.score) IC.sfx.score(S, dtR);
   IC.renderMini(S, mini, mw, mh);

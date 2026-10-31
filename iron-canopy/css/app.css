@@ -1227,6 +1227,17 @@ body.showcase #stats .stat:not(:nth-last-child(-n+2)),body.showcase #rules,body.
 .cutv .board .face{opacity:.9;filter:grayscale(.6) sepia(.3)}
 .cutv .sketch .cap{top:auto;bottom:1.1rem}
 .cutv .sketch .say{top:1.1rem;bottom:auto}
+/* the panel alive (render-cutlife.js): the painting by WebGL with its depth, what floats in front, the words leaning */
+.cutv .frame canvas.cutgl{position:absolute;inset:0;width:100%;height:100%;display:block;animation:fadeIn .35s var(--ease)}
+.cutv .frame img.under{visibility:hidden}
+.cutv .frame canvas.cutfx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.cutv .frame canvas.cutghost{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5;animation:ghostOut .8s ease-in both}
+.cutv .frame:has(.cutghost){animation:none}
+@keyframes ghostOut{from{opacity:1;filter:blur(0)}to{opacity:0;filter:blur(3px);transform:scale(1.03)}}
+.cutv .cap span{display:inline;animation:wordIn .45s var(--ease) both}
+@keyframes wordIn{from{opacity:0;filter:blur(2px)}to{opacity:1;filter:none}}
+.cutv .cap,.cutv .says{will-change:translate}
+.cutv .frame.shown .cap,.cutv .frame.shown .cap span,.cutv .frame.shown .say{animation-delay:0s!important;animation-duration:.15s!important}
 .cutv .cutbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;color:var(--muted)}
 .cutv .cutbar small{font-family:var(--display);font-size:1.1rem;letter-spacing:.14em;text-transform:uppercase;color:#f1ebdd}
 .cutv .dots{display:flex;gap:6px}

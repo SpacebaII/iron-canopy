@@ -184,7 +184,25 @@ IC.cutPanels = function (S, c) {
   const C = IC.CUTSCENES[c.id];
   return C.panels.filter(p => !p.only || p.only === c.v).map(p => ({ art: p.art, src: p.src, shot: p.shot, cap: IC.cutFill(S, p.cap, c.d), say: p.say ? [p.say[0], IC.cutFill(S, p.say[1], c.d)] : null,
     // (story v3) more than one line, a route the panel belongs to (checked as the viewer reaches it), a choice
-    says: p.says ? p.says.map(x => [x[0], IC.cutFill(S, x[1], c.d)]) : null, if: p.if || '', ask: p.ask || null }));
+    says: p.says ? p.says.map(x => [x[0], IC.cutFill(S, x[1], c.d)]) : null, if: p.if || '', ask: p.ask || null, fx: p.fx || '' }));
+};
+/* what moves in a painted panel (render-cutlife.js draws it): read from its shot and caption, or said by the panel itself
+   (fx: 'rain night', '-motes' to take one away), read from the shot alone: the caption remembers things the picture does not show. Weather and fire fall in front of the picture; lamps flicker; an
+   alarm pulses; a blast flashes and shakes once. */
+const MOOD = {
+  rain: /\b(rain(?!coat)|raining|drizzle|downpour|storm)/, snow: /\b(snow|sleet|blizzard|frost)/,
+  embers: /\b(fire(?! door| exting)|flames?|burn(ing|t)?|embers?|blaze|blast|explo|erupt)/, smoke: /\b(smoke|smoking|dust|debris|ash|haze|steam)/,
+  flicker: /\b(candle|lamp|lantern|emergency light|fluorescent|strip light|torch|bulbs?)/, alarm: /\b(alarm|siren|beacons?|warning light)/,
+  flash: /\b(flash|erupts?|explosion|blast|detonat)/, night: /\b(night|dark|midnight|evening|dusk)\b/, sun: /\b(morning|sun|sunlit|daylight|afternoon|window)/
+};
+/* where the words mislead (weather on a screen, a frosted door), the panel's art says so */
+IC.CUT_FX = { 'c16-1': '-rain', 'w22-tv': '-snow -embers', 'c27-2': '-rain -smoke', 'c27-lost': '-rain', 'e01b-1': '-snow', 'x2-4': '-alarm' };
+IC.cutMood = function (p) {
+  const t = String(p.shot || p.cap || '').toLowerCase(), m = {};
+  for (const k in MOOD) m[k] = MOOD[k].test(t);
+  m.motes = !m.rain && !m.snow && !m.night;
+  for (const w of String(p.fx || IC.CUT_FX[p.art] || '').split(/\s+/)) if (w) m[w.replace(/^-/, '')] = w[0] !== '-';
+  return m;
 };
 /* the viewer took it: seen */
 IC.cutDone = function (S, c) {
